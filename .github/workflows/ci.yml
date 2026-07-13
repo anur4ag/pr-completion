@@ -139,8 +139,21 @@ jobs:
 
           npm install -g "@anthropic-ai/claude-code@${CLAUDE_VERSION}"
           npm install -g "@openai/codex@${CODEX_VERSION}"
-          echo "Installed claude: $(claude --version)"
-          echo "Installed codex: $(codex --version)"
+
+          # Ensure npm global bin is on PATH for later Python subprocess calls.
+          # On Windows the bin dir is the prefix itself; elsewhere it is prefix/bin.
+          NPM_PREFIX="$(npm prefix -g)"
+          if [ -d "${NPM_PREFIX}/bin" ]; then
+            echo "${NPM_PREFIX}/bin" >> "$GITHUB_PATH"
+            export PATH="${NPM_PREFIX}/bin:${PATH}"
+          else
+            echo "${NPM_PREFIX}" >> "$GITHUB_PATH"
+            export PATH="${NPM_PREFIX}:${PATH}"
+          fi
+          hash -r 2>/dev/null || true
+
+          echo "Installed claude: $(command -v claude) -> $(claude --version)"
+          echo "Installed codex: $(command -v codex) -> $(codex --version)"
 
       - name: Live isolated marketplace install smoke only
         run: |

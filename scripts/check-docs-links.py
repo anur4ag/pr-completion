@@ -377,6 +377,11 @@ def probe_url(url: str, timeout: float) -> tuple[str, str | None]:
                 once("GET")
         return url, None
     except urllib.error.HTTPError as error:
+        # 401/403 mean the host is reachable but access-restricted (auth wall or
+        # bot filtering from CI egress). That is not a broken/missing page; still
+        # fail hard on 404/410 and other transport errors.
+        if error.code in {401, 403}:
+            return url, None
         return url, f"HTTP {error.code}"
     except urllib.error.URLError as error:
         return url, f"URL error: {error.reason!r}"

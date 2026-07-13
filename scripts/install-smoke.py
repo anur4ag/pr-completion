@@ -100,6 +100,23 @@ def log(message: str, *, as_json: bool) -> None:
     print(message, file=stream, flush=True)
 
 
+def resolve_command(command: list[str], *, env: dict[str, str] | None = None) -> list[str]:
+    """Resolve argv[0] to an absolute path when possible.
+
+    On Windows, npm global CLIs are typically ``*.cmd`` shims. ``subprocess``
+    without ``shell=True`` does not apply PATHEXT the same way the shell does,
+    so bare names like ``claude`` fail with WinError 2 even when ``shutil.which``
+    can see them. Resolve once up front using PATH from ``env`` when provided.
+    """
+    if not command:
+        return command
+    path_env = None if env is None else env.get("PATH")
+    resolved = shutil.which(command[0], path=path_env)
+    if resolved is None:
+        return command
+    return [resolved, *command[1:]]
+
+
 def run(
     command: list[str],
     *,
@@ -107,9 +124,10 @@ def run(
     cwd: Path | None = None,
     as_json: bool = False,
 ) -> subprocess.CompletedProcess[str]:
-    log("+ " + " ".join(command), as_json=as_json)
+    resolved = resolve_command(command, env=env)
+    log("+ " + " ".join(resolved), as_json=as_json)
     completed = subprocess.run(
-        command,
+        resolved,
         env=env,
         cwd=str(cwd) if cwd is not None else None,
         text=True,
