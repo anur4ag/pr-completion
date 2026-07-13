@@ -66,8 +66,9 @@ jobs:
           fi
           echo "tag=${TAG_NAME}"
           echo "version=${VERSION}"
-          echo "version=${VERSION}" >> "${GITHUB_ENV}"
-          echo "tag=${TAG_NAME}" >> "${GITHUB_ENV}"
+          # Export uppercase names for later steps (Linux env is case-sensitive).
+          echo "VERSION=${VERSION}" >> "${GITHUB_ENV}"
+          echo "TAG=${TAG_NAME}" >> "${GITHUB_ENV}"
 
       - name: Full validation suite (no live install smoke)
         run: python -B scripts/run-ci-validation.py --skip-install-smoke
