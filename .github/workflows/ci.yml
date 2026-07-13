@@ -1,0 +1,152 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Full unit/package/docs gate. Each validation runs exactly once via the
+  # canonical entrypoint. Live marketplace install smoke is a separate job.
+  validate:
+    name: validate (${{ matrix.os }}, py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        # Floor runtime plus current CPython (3.14). Do not claim other
+        # Python versions until they are added here.
+        python-version: ["3.10", "3.14"]
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Show interpreter
+        run: |
+          python -c "import platform,sys; print(sys.version); print(platform.platform())"
+
+      - name: Canonical validation (no live install smoke)
+        run: python -B scripts/run-ci-validation.py --skip-install-smoke
+
+  # Live Claude/Codex marketplace installs from installed caches only.
+  # Does not re-run package/watcher/docs gates (those belong to validate).
+  install-smoke:
+    name: install-smoke (${{ matrix.os }}, ${{ matrix.cli-channel }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        # floor: verified compatibility pins.
+        # latest: npm dist-tag "latest" (current published stable line).
+        # Do not use "next" here — that channel can be ahead of latest and is
+        # not claimed as current stable.
+        cli-channel: [floor, latest]
+        include:
+          - cli-channel: floor
+            claude-spec: "2.1.207"
+            codex-spec: "0.144.3"
+            claude-channel: "floor"
+            codex-channel: "floor"
+          - cli-channel: latest
+            claude-spec: "latest"
+            codex-spec: "latest"
+            claude-channel: "latest"
+            codex-channel: "latest"
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Resolve and install Claude/Codex CLIs
+        id: resolve
+        run: |
+          set -euo pipefail
+          CLAUDE_SPEC="${{ matrix.claude-spec }}"
+          CODEX_SPEC="${{ matrix.codex-spec }}"
+          CLAUDE_CHANNEL="${{ matrix.claude-channel }}"
+          CODEX_CHANNEL="${{ matrix.codex-channel }}"
+
+          if [ "$CLAUDE_SPEC" = "latest" ] || [ "$CLAUDE_SPEC" = "stable" ] || [ "$CLAUDE_SPEC" = "next" ]; then
+            CLAUDE_VERSION="$(npm view "@anthropic-ai/claude-code@${CLAUDE_SPEC}" version)"
+          else
+            CLAUDE_VERSION="$CLAUDE_SPEC"
+          fi
+          if [ "$CODEX_SPEC" = "latest" ] || [ "$CODEX_SPEC" = "stable" ] || [ "$CODEX_SPEC" = "next" ]; then
+            CODEX_VERSION="$(npm view "@openai/codex@${CODEX_SPEC}" version)"
+          else
+            CODEX_VERSION="$CODEX_SPEC"
+          fi
+
+          # Refuse to treat npm "next" as current stable if misconfigured.
+          if [ "$CLAUDE_CHANNEL" = "latest" ]; then
+            NEXT_VERSION="$(npm view "@anthropic-ai/claude-code@next" version 2>/dev/null || true)"
+            if [ -n "${NEXT_VERSION}" ] && [ "$CLAUDE_VERSION" = "$NEXT_VERSION" ]; then
+              LATEST_ONLY="$(npm view "@anthropic-ai/claude-code@latest" version)"
+              if [ "$LATEST_ONLY" != "$NEXT_VERSION" ]; then
+                echo "refusing to install Claude next ($NEXT_VERSION) as latest channel" >&2
+                exit 1
+              fi
+            fi
+          fi
+
+          echo "claude_channel=$CLAUDE_CHANNEL" >> "$GITHUB_OUTPUT"
+          echo "codex_channel=$CODEX_CHANNEL" >> "$GITHUB_OUTPUT"
+          echo "claude_version=$CLAUDE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "codex_version=$CODEX_VERSION" >> "$GITHUB_OUTPUT"
+
+          echo "Resolved CLI versions:"
+          echo "  Claude channel=${CLAUDE_CHANNEL} spec=${CLAUDE_SPEC} -> ${CLAUDE_VERSION}"
+          echo "  Codex  channel=${CODEX_CHANNEL} spec=${CODEX_SPEC} -> ${CODEX_VERSION}"
+          {
+            echo "### Resolved CLI versions"
+            echo ""
+            echo "| Tool | Channel | Spec | Resolved |"
+            echo "|---|---|---|---|"
+            echo "| Claude Code | ${CLAUDE_CHANNEL} | ${CLAUDE_SPEC} | ${CLAUDE_VERSION} |"
+            echo "| Codex CLI | ${CODEX_CHANNEL} | ${CODEX_SPEC} | ${CODEX_VERSION} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          npm install -g "@anthropic-ai/claude-code@${CLAUDE_VERSION}"
+          npm install -g "@openai/codex@${CODEX_VERSION}"
+          echo "Installed claude: $(claude --version)"
+          echo "Installed codex: $(codex --version)"
+
+      - name: Live isolated marketplace install smoke only
+        run: |
+          python -B scripts/run-ci-validation.py \
+            --install-smoke-only \
+            --require-cli \
+            --enforce-floor
+        env:
+          PR_COMPLETION_LIVE_INSTALL_SMOKE: "0"

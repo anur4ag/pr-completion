@@ -1,0 +1,2 @@
+# pr-completion-safety-test-data
+cmd = "gh pr merge --squash"

@@ -1,0 +1,2 @@
+# pr-completion-safety-test-data
+mutation { enablePullRequestAutoMerge(input: {}) { clientMutationId } }

@@ -1,0 +1,37 @@
+{
+  "targets": [
+    {
+      "path": "/fixture/current",
+      "kind": "current",
+      "repository": "example/current",
+      "pr": {
+        "number": 805,
+        "url": "https://github.com/example/current/pull/805",
+        "state": "OPEN",
+        "isDraft": false,
+        "headRefName": "feature/auto-merge-pending",
+        "headRefOid": "head-auto-pending",
+        "baseRefName": "main",
+        "baseRefOid": "base-auto-pending",
+        "mergeable": "MERGEABLE",
+        "mergeStateStatus": "BLOCKED",
+        "reviewDecision": "APPROVED",
+        "autoMergeRequest": {
+          "enabledAt": "2026-07-13T12:00:00Z",
+          "enabledBy": {"login": "release-bot"},
+          "mergeMethod": "SQUASH"
+        },
+        "mergedAt": null,
+        "reviews": []
+      },
+      "checks": [
+        {
+          "name": "compile",
+          "state": "IN_PROGRESS",
+          "bucket": "pending"
+        }
+      ],
+      "reviewThreads": []
+    }
+  ]
+}

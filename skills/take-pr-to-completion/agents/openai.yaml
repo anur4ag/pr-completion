@@ -1,0 +1,4 @@
+interface:
+  display_name: "Take PR to Completion"
+  short_description: "Deterministically drive a pull request to verified merge readiness"
+  default_prompt: "Use $pr-completion:take-pr-to-completion to run the commit, watch, review, and conflict loop until this PR is verified merge-ready. Do not merge or enable auto-merge."

@@ -1,0 +1,38 @@
+{
+  "targets": [
+    {
+      "path": "/fixture/current",
+      "kind": "current",
+      "repository": "example/current",
+      "pr": {
+        "number": 801,
+        "url": "https://github.com/example/current/pull/801",
+        "state": "OPEN",
+        "isDraft": false,
+        "headRefName": "feature/unknown-bucket",
+        "headRefOid": "head-unknown-bucket",
+        "baseRefName": "main",
+        "baseRefOid": "base-unknown",
+        "mergeable": "MERGEABLE",
+        "mergeStateStatus": "CLEAN",
+        "reviewDecision": "APPROVED",
+        "autoMergeRequest": null,
+        "mergedAt": null,
+        "reviews": []
+      },
+      "checks": [
+        {
+          "name": "compile",
+          "state": "SUCCESS",
+          "bucket": "pass"
+        },
+        {
+          "name": "mystery",
+          "state": "NEUTRAL",
+          "bucket": "weird-new-bucket"
+        }
+      ],
+      "reviewThreads": []
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+# pr-completion-safety-test-data
+#!/bin/sh
+# pr-completion-safety-test-data
+gh pr merge --admin

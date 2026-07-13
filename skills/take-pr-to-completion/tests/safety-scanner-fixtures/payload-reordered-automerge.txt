@@ -1,0 +1,2 @@
+# pr-completion-safety-test-data
+On ready, auto-merge should be enabled for the branch.

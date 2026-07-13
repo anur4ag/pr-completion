@@ -1,0 +1,33 @@
+{
+  "targets": [
+    {
+      "path": "/fixture/submodule",
+      "kind": "submodule",
+      "repository": "example/submodule",
+      "pr": {
+        "number": 303,
+        "url": "https://github.com/example/submodule/pull/303",
+        "state": "OPEN",
+        "isDraft": false,
+        "headRefName": "feature/conflict",
+        "headRefOid": "head-conflict",
+        "baseRefName": "main",
+        "baseRefOid": "base-three",
+        "mergeable": "CONFLICTING",
+        "mergeStateStatus": "DIRTY",
+        "reviewDecision": "APPROVED",
+        "autoMergeRequest": null,
+        "mergedAt": null,
+        "reviews": []
+      },
+      "checks": [
+        {
+          "name": "tests",
+          "state": "SUCCESS",
+          "bucket": "pass"
+        }
+      ],
+      "reviewThreads": []
+    }
+  ]
+}

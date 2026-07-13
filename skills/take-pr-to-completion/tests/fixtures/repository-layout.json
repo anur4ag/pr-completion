@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "path": ".",
+      "marker": "directory"
+    },
+    {
+      "path": "packages/nested-repository",
+      "marker": "directory"
+    },
+    {
+      "path": "traycer-submodule",
+      "marker": "file",
+      "content": "gitdir: ../.git/modules/traycer-submodule\n"
+    }
+  ]
+}

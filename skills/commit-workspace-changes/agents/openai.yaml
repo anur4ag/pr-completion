@@ -1,0 +1,4 @@
+interface:
+  display_name: "Commit Workspace Changes"
+  short_description: "Validate and commit changes across Git repositories"
+  default_prompt: "Use $pr-completion:commit-workspace-changes to run all required checks, fix failures, and commit the intended changes in their owning repositories."

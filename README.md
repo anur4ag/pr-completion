@@ -1,0 +1,172 @@
+# PR Completion
+
+Autonomous pull request preparation for [Claude Code](https://code.claude.com/) and [Codex](https://chatgpt.com/codex).
+
+Validate and commit local work, then drive a GitHub PR through CI, review triage, and conflict resolution until the current head is **verified merge-ready**. The public workflow never merges, enables auto-merge, joins a merge queue, force-pushes, or bypasses branch protections.
+
+> **Status.** Public dual-harness plugin at [`anur4ag/pr-completion`](https://github.com/anur4ag/pr-completion) (`VERSION` `0.1.0`).
+> Docs: [https://anur4ag.github.io/pr-completion/](https://anur4ag.github.io/pr-completion/).
+> OpenAI directory submission is a separate follow-up and is not claimed here.
+
+## Skills
+
+| Skill | Authority |
+| --- | --- |
+| `take-pr-to-completion` | Orchestrates the PR lifecycle. Commits, pushes, CI repair, review triage, and conflict resolution are in scope. **Merge-state mutation is never in scope.** |
+| `commit-workspace-changes` | Discovers task-related changes across repos/submodules, runs derived checks, and creates local commits. Does not push or open PRs unless a parent workflow does. |
+| `gh-review-comment-triage` | Fetches review threads, verifies claims against current code, patches real issues, and replies/resolves with evidence. |
+| `merge-conflict-resolution` | Resolves merge/rebase/cherry-pick/revert conflicts by reconstructing both intents and validating the result. |
+
+Invoke skills by namespaced id, for example `$pr-completion:take-pr-to-completion`.
+
+## Prerequisites
+
+- **Python** 3.10 or newer (`python3`)
+- **Git**
+- **GitHub CLI** (`gh`) authenticated to the account that can read and write the target PR
+- Repository-specific build, lint, and test tools required by the projects you work in
+- One target harness floor:
+  - Claude Code **2.1.207+**, or
+  - Codex CLI **0.144.3+**
+
+### Platform support status
+
+| Platform | Status |
+| --- | --- |
+| **macOS** | Supported (hosted CI + local) |
+| **Linux** | Supported (hosted CI) |
+| **Windows** | Supported (hosted CI) |
+
+Hosted validation runs on `ubuntu-latest`, `macos-latest`, and `windows-latest` for the package suite and isolated install smoke.
+
+## Install
+
+Marketplace name and plugin id are both `pr-completion`. Install as `pr-completion@pr-completion`.
+
+### Claude Code
+
+```bash
+claude plugin marketplace add anur4ag/pr-completion
+claude plugin install pr-completion@pr-completion --scope user
+```
+
+Pin the marketplace to a release tag, then install:
+
+```bash
+claude plugin marketplace add anur4ag/pr-completion@v0.1.0
+claude plugin install pr-completion@pr-completion --scope user
+```
+
+Refresh marketplace catalog, then update the plugin:
+
+```bash
+claude plugin marketplace update pr-completion
+claude plugin update pr-completion --scope user
+```
+
+Uninstall:
+
+```bash
+claude plugin uninstall pr-completion --scope user
+# Optional: also drop the marketplace source
+claude plugin marketplace remove pr-completion
+```
+
+### Codex
+
+```bash
+codex plugin marketplace add anur4ag/pr-completion
+codex plugin add pr-completion@pr-completion
+```
+
+Pin the marketplace to a release tag:
+
+```bash
+codex plugin marketplace add anur4ag/pr-completion@v0.1.0
+# or: codex plugin marketplace add anur4ag/pr-completion --ref v0.1.0
+codex plugin add pr-completion@pr-completion
+```
+
+Refresh marketplace snapshot, then reinstall to pick up a new version:
+
+```bash
+codex plugin marketplace upgrade pr-completion
+codex plugin remove pr-completion@pr-completion
+codex plugin add pr-completion@pr-completion
+```
+
+Uninstall:
+
+```bash
+codex plugin remove pr-completion@pr-completion
+# Optional: also drop the marketplace source
+codex plugin marketplace remove pr-completion
+```
+
+## First use
+
+1. Open a repository with an open pull request (or local task changes ready to commit).
+2. Authenticate GitHub CLI: `gh auth status` should succeed for that host.
+3. Ask the agent to drive the PR with `$pr-completion:take-pr-to-completion`.
+4. Expect a terminal report of **merge-ready**, **externally auto-merge-enabled**, **already merged**, or **blocked** with evidence.
+5. Merge yourself (or with your own process). This plugin does not merge.
+
+## Safety boundary
+
+Terminal success is **verified merge readiness**, not a merged PR.
+
+The completion workflow must not run:
+
+- `gh pr merge` or GraphQL/REST merge mutations
+- enable/disable auto-merge (`enablePullRequestAutoMerge`, `disablePullRequestAutoMerge`)
+- merge-queue enqueue (`enqueuePullRequest`)
+- force-push or branch-protection bypasses
+
+Auto-merge that another actor already enabled may be observed and reported only.
+
+## Privacy and license
+
+- Plugin code and local helpers execute on your machine inside Claude Code or Codex.
+- Those harnesses, plus tools you invoke (especially Git and `gh`), may transmit data to **their** configured providers under **their** policies.
+- The publisher operates no backend, analytics service, telemetry collector, or credential proxy for this plugin.
+- GitHub access uses your existing `gh` authentication; GitHub remains operated by GitHub, not by this publisher.
+- License: [MIT](LICENSE)
+
+Planned legal and support pages (source lives under `docs/`; live hosting is ticket-5 verification):
+
+| Page | Planned URL |
+| --- | --- |
+| Site home | `https://anur4ag.github.io/pr-completion/` |
+| Support | `https://anur4ag.github.io/pr-completion/support/` |
+| Privacy | `https://anur4ag.github.io/pr-completion/privacy/` |
+| Terms | `https://anur4ag.github.io/pr-completion/terms/` |
+
+## Documentation
+
+Local source of truth for durable docs:
+
+- [docs/index.md](docs/index.md) - overview
+- [docs/installation.md](docs/installation.md) - install, pin, update, uninstall, troubleshooting
+- [docs/skills.md](docs/skills.md) - skill authority and safety contract
+- [docs/support.md](docs/support.md) - support and issue routing
+- [docs/privacy.md](docs/privacy.md) - privacy statement
+- [docs/terms.md](docs/terms.md) - terms of use
+- [SECURITY.md](SECURITY.md) - security reporting
+
+Build and link-check the GitHub Pages site locally:
+
+```bash
+python3 scripts/build-docs.py
+python3 scripts/check-docs-links.py
+```
+
+## Publisher
+
+- Name: Anurag Sharma
+- GitHub: [anur4ag](https://github.com/anur4ag)
+- Canonical repository (planned public source): `https://github.com/anur4ag/pr-completion`
+- Individual publisher verification for marketplace/directory surfaces is a separate external step and is not claimed complete here.
+
+## Version
+
+Canonical version file: [`VERSION`](VERSION). Claude, Codex, and marketplace manifests must match it.

@@ -1,0 +1,38 @@
+{
+  "targets": [
+    {
+      "path": "/fixture/current",
+      "kind": "current",
+      "repository": "example/current",
+      "pr": {
+        "number": 707,
+        "url": "https://github.com/example/current/pull/707",
+        "state": "OPEN",
+        "isDraft": false,
+        "headRefName": "feature/blocked",
+        "headRefOid": "head-blocked",
+        "baseRefName": "main",
+        "baseRefOid": "base-seven",
+        "mergeable": "MERGEABLE",
+        "mergeStateStatus": "BLOCKED",
+        "reviewDecision": "APPROVED",
+        "autoMergeRequest": null,
+        "mergedAt": null,
+        "reviews": []
+      },
+      "checks": [
+        {
+          "name": "compile",
+          "state": "SUCCESS",
+          "bucket": "pass"
+        },
+        {
+          "name": "tests",
+          "state": "SUCCESS",
+          "bucket": "pass"
+        }
+      ],
+      "reviewThreads": []
+    }
+  ]
+}

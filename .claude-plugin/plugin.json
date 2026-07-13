@@ -1,0 +1,21 @@
+{
+  "name": "pr-completion",
+  "displayName": "PR Completion",
+  "version": "0.1.0",
+  "description": "Validate and commit local changes, then deterministically watch GitHub pull requests through CI, reviews, conflicts, and verified merge readiness.",
+  "author": {
+    "name": "Anurag Sharma",
+    "url": "https://github.com/anur4ag"
+  },
+  "homepage": "https://anur4ag.github.io/pr-completion/",
+  "repository": "https://github.com/anur4ag/pr-completion",
+  "license": "MIT",
+  "keywords": [
+    "github",
+    "pull-request",
+    "ci",
+    "code-review",
+    "productivity"
+  ],
+  "skills": "./skills/"
+}

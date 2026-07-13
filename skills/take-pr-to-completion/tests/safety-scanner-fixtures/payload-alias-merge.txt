@@ -1,0 +1,2 @@
+# pr-completion-safety-test-data
+alias ghm='gh pr merge'

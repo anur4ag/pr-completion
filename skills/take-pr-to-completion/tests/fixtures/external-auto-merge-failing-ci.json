@@ -1,0 +1,38 @@
+{
+  "targets": [
+    {
+      "path": "/fixture/current",
+      "kind": "current",
+      "repository": "example/current",
+      "pr": {
+        "number": 806,
+        "url": "https://github.com/example/current/pull/806",
+        "state": "OPEN",
+        "isDraft": false,
+        "headRefName": "feature/auto-merge-failing",
+        "headRefOid": "head-auto-failing",
+        "baseRefName": "main",
+        "baseRefOid": "base-auto-failing",
+        "mergeable": "MERGEABLE",
+        "mergeStateStatus": "UNSTABLE",
+        "reviewDecision": "APPROVED",
+        "autoMergeRequest": {
+          "enabledAt": "2026-07-13T13:00:00Z",
+          "enabledBy": {"login": "alice"},
+          "mergeMethod": "MERGE",
+          "commitHeadline": "ship it"
+        },
+        "mergedAt": null,
+        "reviews": []
+      },
+      "checks": [
+        {
+          "name": "tests",
+          "state": "FAILURE",
+          "bucket": "fail"
+        }
+      ],
+      "reviewThreads": []
+    }
+  ]
+}

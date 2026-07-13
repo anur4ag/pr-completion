@@ -1,0 +1,27 @@
+{
+  "targets": [
+    {
+      "path": "/fixture/current",
+      "kind": "current",
+      "repository": "example/current",
+      "pr": {
+        "number": 802,
+        "url": "https://github.com/example/current/pull/802",
+        "state": "OPEN",
+        "isDraft": false,
+        "headRefName": "feature/empty-checks",
+        "headRefOid": "head-empty-checks",
+        "baseRefName": "main",
+        "baseRefOid": "base-empty",
+        "mergeable": "MERGEABLE",
+        "mergeStateStatus": "CLEAN",
+        "reviewDecision": "APPROVED",
+        "autoMergeRequest": null,
+        "mergedAt": null,
+        "reviews": []
+      },
+      "checks": [],
+      "reviewThreads": []
+    }
+  ]
+}

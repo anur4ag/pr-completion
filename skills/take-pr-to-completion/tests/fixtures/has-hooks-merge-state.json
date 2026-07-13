@@ -1,0 +1,33 @@
+{
+  "targets": [
+    {
+      "path": "/fixture/current",
+      "kind": "current",
+      "repository": "example/current",
+      "pr": {
+        "number": 804,
+        "url": "https://github.com/example/current/pull/804",
+        "state": "OPEN",
+        "isDraft": false,
+        "headRefName": "feature/has-hooks",
+        "headRefOid": "head-has-hooks",
+        "baseRefName": "main",
+        "baseRefOid": "base-hooks",
+        "mergeable": "MERGEABLE",
+        "mergeStateStatus": "HAS_HOOKS",
+        "reviewDecision": "APPROVED",
+        "autoMergeRequest": null,
+        "mergedAt": null,
+        "reviews": []
+      },
+      "checks": [
+        {
+          "name": "compile",
+          "state": "SUCCESS",
+          "bucket": "pass"
+        }
+      ],
+      "reviewThreads": []
+    }
+  ]
+}

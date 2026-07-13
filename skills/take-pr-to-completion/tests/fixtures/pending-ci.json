@@ -1,0 +1,33 @@
+{
+  "targets": [
+    {
+      "path": "/fixture/current",
+      "kind": "current",
+      "repository": "example/current",
+      "pr": {
+        "number": 101,
+        "url": "https://github.com/example/current/pull/101",
+        "state": "OPEN",
+        "isDraft": false,
+        "headRefName": "feature/watch",
+        "headRefOid": "head-pending",
+        "baseRefName": "main",
+        "baseRefOid": "base-one",
+        "mergeable": "MERGEABLE",
+        "mergeStateStatus": "BLOCKED",
+        "reviewDecision": "APPROVED",
+        "autoMergeRequest": null,
+        "mergedAt": null,
+        "reviews": []
+      },
+      "checks": [
+        {
+          "name": "compile",
+          "state": "IN_PROGRESS",
+          "bucket": "pending"
+        }
+      ],
+      "reviewThreads": []
+    }
+  ]
+}

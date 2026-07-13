@@ -1,0 +1,35 @@
+{
+  "name": "pr-completion",
+  "version": "0.1.0",
+  "description": "Validate and commit local changes, then deterministically watch GitHub pull requests through CI, reviews, conflicts, and verified merge readiness.",
+  "author": {
+    "name": "Anurag Sharma",
+    "url": "https://github.com/anur4ag"
+  },
+  "homepage": "https://anur4ag.github.io/pr-completion/",
+  "repository": "https://github.com/anur4ag/pr-completion",
+  "license": "MIT",
+  "keywords": [
+    "github",
+    "pull-request",
+    "ci",
+    "code-review",
+    "productivity"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "PR Completion",
+    "shortDescription": "Autonomously drive pull requests to verified merge readiness",
+    "longDescription": "Discover changed repositories, create validated commits, run a configurable PR state-machine watcher, triage review rounds, resolve upstream conflicts safely, and stop at verified merge readiness without merging or enabling auto-merge.",
+    "developerName": "Anurag Sharma",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://anur4ag.github.io/pr-completion/",
+    "privacyPolicyURL": "https://anur4ag.github.io/pr-completion/privacy/",
+    "termsOfServiceURL": "https://anur4ag.github.io/pr-completion/terms/",
+    "defaultPrompt": "Use $pr-completion:take-pr-to-completion to autonomously drive this pull request through CI, review, and conflicts until it is verified merge-ready. Do not merge or enable auto-merge."
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "targets": [
+    {
+      "path": "/fixture/current",
+      "kind": "current",
+      "repository": "example/current",
+      "pr": {
+        "number": 904,
+        "url": "https://github.com/example/current/pull/904",
+        "state": "OPEN",
+        "isDraft": false,
+        "headRefName": "feature/malformed-check",
+        "headRefOid": "head-malformed-check",
+        "baseRefName": "main",
+        "baseRefOid": "base-malformed",
+        "mergeable": "MERGEABLE",
+        "mergeStateStatus": "CLEAN",
+        "reviewDecision": "APPROVED",
+        "autoMergeRequest": null,
+        "mergedAt": null,
+        "reviews": []
+      },
+      "checks": [
+        {
+          "name": "compile",
+          "state": "SUCCESS",
+          "bucket": "pass"
+        },
+        "not-an-object",
+        {
+          "name": "",
+          "state": "SUCCESS",
+          "bucket": "pass"
+        },
+        {
+          "name": "lint",
+          "state": "SUCCESS"
+        }
+      ],
+      "reviewThreads": []
+    }
+  ]
+}

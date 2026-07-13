@@ -1,0 +1,18 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "pr-completion",
+  "description": "Autonomous pull request preparation, review triage, conflict resolution, and merge-readiness workflows for Claude Code and compatible Codex installs.",
+  "owner": {
+    "name": "Anurag Sharma",
+    "url": "https://github.com/anur4ag"
+  },
+  "plugins": [
+    {
+      "name": "pr-completion",
+      "description": "Validate and commit workspace changes, then drive GitHub pull requests through CI, reviews, conflicts, and verified merge readiness.",
+      "version": "0.1.0",
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+# pr-completion-safety-test-data
+subprocess.run(["gh", "pr", "merge", "123"])

@@ -1,0 +1,33 @@
+{
+  "targets": [
+    {
+      "path": "/fixture/current",
+      "kind": "current",
+      "repository": "example/current",
+      "pr": {
+        "number": 902,
+        "url": "https://github.com/example/current/pull/902",
+        "state": "OPEN",
+        "isDraft": false,
+        "headRefName": "feature/incoherent",
+        "headRefOid": "head-incoherent-fail",
+        "baseRefName": "main",
+        "baseRefOid": "base-incoherent",
+        "mergeable": "MERGEABLE",
+        "mergeStateStatus": "CLEAN",
+        "reviewDecision": "APPROVED",
+        "autoMergeRequest": null,
+        "mergedAt": null,
+        "reviews": []
+      },
+      "checks": [
+        {
+          "name": "compile",
+          "state": "FAILURE",
+          "bucket": "pass"
+        }
+      ],
+      "reviewThreads": []
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "targets": [
+    {
+      "path": "/fixture/current",
+      "kind": "current",
+      "repository": "example/current",
+      "pr": {
+        "number": 606,
+        "url": "https://github.com/example/current/pull/606",
+        "state": "MERGED",
+        "isDraft": false,
+        "headRefName": "feature/merged",
+        "headRefOid": "head-merged",
+        "baseRefName": "main",
+        "baseRefOid": "base-six",
+        "mergeable": "UNKNOWN",
+        "mergeStateStatus": "UNKNOWN",
+        "reviewDecision": "APPROVED",
+        "autoMergeRequest": null,
+        "mergedAt": "2026-07-13T15:00:00Z",
+        "reviews": []
+      },
+      "checks": [],
+      "reviewThreads": []
+    }
+  ]
+}

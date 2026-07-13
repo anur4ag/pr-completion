@@ -1,0 +1,53 @@
+{
+  "targets": [
+    {
+      "path": "/fixture/nested",
+      "kind": "nested",
+      "repository": "example/nested",
+      "pr": {
+        "number": 202,
+        "url": "https://github.com/example/nested/pull/202",
+        "state": "OPEN",
+        "isDraft": false,
+        "headRefName": "feature/review",
+        "headRefOid": "head-review",
+        "baseRefName": "main",
+        "baseRefOid": "base-two",
+        "mergeable": "MERGEABLE",
+        "mergeStateStatus": "CLEAN",
+        "reviewDecision": "APPROVED",
+        "autoMergeRequest": null,
+        "mergedAt": null,
+        "reviews": []
+      },
+      "checks": [
+        {
+          "name": "tests",
+          "state": "SUCCESS",
+          "bucket": "pass"
+        }
+      ],
+      "reviewThreads": [
+        {
+          "id": "PRRT_review",
+          "isResolved": false,
+          "isOutdated": false,
+          "path": "src/watch.ts",
+          "line": 42,
+          "comments": {
+            "nodes": [
+              {
+                "id": "PRRC_review",
+                "author": {
+                  "login": "coderabbitai[bot]"
+                },
+                "createdAt": "2026-07-13T00:00:00Z",
+                "url": "https://github.com/example/nested/pull/202#discussion_r1"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

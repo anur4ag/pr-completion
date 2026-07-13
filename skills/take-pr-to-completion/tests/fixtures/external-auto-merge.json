@@ -1,0 +1,42 @@
+{
+  "targets": [
+    {
+      "path": "/fixture/current",
+      "kind": "current",
+      "repository": "example/current",
+      "pr": {
+        "number": 505,
+        "url": "https://github.com/example/current/pull/505",
+        "state": "OPEN",
+        "isDraft": false,
+        "headRefName": "feature/external-auto-merge",
+        "headRefOid": "head-external-auto-merge",
+        "baseRefName": "main",
+        "baseRefOid": "base-five",
+        "mergeable": "MERGEABLE",
+        "mergeStateStatus": "CLEAN",
+        "reviewDecision": "APPROVED",
+        "autoMergeRequest": {
+          "enabledAt": "2026-07-13T12:00:00Z",
+          "enabledBy": {"login": "alice"},
+          "mergeMethod": "SQUASH"
+        },
+        "mergedAt": null,
+        "reviews": []
+      },
+      "checks": [
+        {
+          "name": "compile",
+          "state": "SUCCESS",
+          "bucket": "pass"
+        },
+        {
+          "name": "tests",
+          "state": "SUCCESS",
+          "bucket": "pass"
+        }
+      ],
+      "reviewThreads": []
+    }
+  ]
+}

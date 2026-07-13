@@ -1,0 +1,33 @@
+{
+  "targets": [
+    {
+      "path": "/fixture/current",
+      "kind": "current",
+      "repository": "example/current",
+      "pr": {
+        "number": 901,
+        "url": "https://github.com/example/current/pull/901",
+        "state": "OPEN",
+        "isDraft": false,
+        "headRefName": "feature/no-head",
+        "headRefOid": "",
+        "baseRefName": "main",
+        "baseRefOid": "base-missing-head",
+        "mergeable": "MERGEABLE",
+        "mergeStateStatus": "CLEAN",
+        "reviewDecision": "APPROVED",
+        "autoMergeRequest": null,
+        "mergedAt": null,
+        "reviews": []
+      },
+      "checks": [
+        {
+          "name": "compile",
+          "state": "SUCCESS",
+          "bucket": "pass"
+        }
+      ],
+      "reviewThreads": []
+    }
+  ]
+}

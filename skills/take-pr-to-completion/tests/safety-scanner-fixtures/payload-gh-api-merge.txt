@@ -1,0 +1,2 @@
+# pr-completion-safety-test-data
+gh api repos/o/r/pulls/1/merge -X PUT

@@ -1,0 +1,142 @@
+# Publish a GitHub Release only from a clean vX.Y.Z tag that matches VERSION.
+#
+# Trigger: push of tag vX.Y.Z (plain SemVer, no build metadata).
+# Never publishes from cachebuster-modified trees or non-tag refs.
+#
+# Flow:
+#   1. Verify tag == v$(VERSION) and working tree is clean
+#   2. Re-run the full local validation suite (no live install smoke here;
+#      three-OS CI must already be green on the tagged commit / main)
+#   3. Build deterministic plugin + skills-source ZIPs and SHA-256 checksums
+#   4. Create the GitHub Release and upload artifacts
+name: release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out tagged commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Verify tag matches VERSION and tree is clean
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG_NAME="${GITHUB_REF_NAME}"
+          if [[ ! "${TAG_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "refusing tag ${TAG_NAME}: expected vX.Y.Z plain SemVer" >&2
+            exit 1
+          fi
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          EXPECTED="v${VERSION}"
+          if [[ "${TAG_NAME}" != "${EXPECTED}" ]]; then
+            echo "tag ${TAG_NAME} does not match VERSION ${VERSION} (expected ${EXPECTED})" >&2
+            exit 1
+          fi
+          if [[ "${VERSION}" == *"+codex."* ]]; then
+            echo "refusing cachebuster VERSION: ${VERSION}" >&2
+            exit 1
+          fi
+          # Refuse dirty or untracked release contamination.
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "working tree is dirty; refusing release" >&2
+            git status --porcelain >&2
+            exit 1
+          fi
+          echo "tag=${TAG_NAME}"
+          echo "version=${VERSION}"
+          echo "version=${VERSION}" >> "${GITHUB_ENV}"
+          echo "tag=${TAG_NAME}" >> "${GITHUB_ENV}"
+
+      - name: Full validation suite (no live install smoke)
+        run: python -B scripts/run-ci-validation.py --skip-install-smoke
+
+      - name: Build deterministic release packages
+        run: python -B scripts/package-release.py --out-dir release-out
+
+      - name: Show artifact checksums
+        run: |
+          set -euo pipefail
+          ls -la release-out
+          cat release-out/SHA256SUMS.txt
+          # Verify checksums round-trip.
+          (
+            cd release-out
+            while read -r digest filename; do
+              actual="$(sha256sum "${filename}" | awk '{print $1}')"
+              if [[ "${actual}" != "${digest}" ]]; then
+                echo "checksum mismatch for ${filename}" >&2
+                exit 1
+              fi
+            done < SHA256SUMS.txt
+          )
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          NOTES="$(mktemp)"
+          {
+            echo "## pr-completion ${TAG}"
+            echo ""
+            echo "Canonical dual-harness release for Claude Code and Codex."
+            echo ""
+            echo "- Version: \`${VERSION}\`"
+            echo "- Tag: \`${TAG}\`"
+            echo "- Safety: merge-ready only (no merge / auto-merge / force-push / protection bypass)"
+            echo ""
+            echo "### Install"
+            echo ""
+            echo "Claude Code:"
+            echo ""
+            echo '```bash'
+            echo "claude plugin marketplace add anur4ag/pr-completion@${TAG}"
+            echo "claude plugin install pr-completion@pr-completion --scope user"
+            echo '```'
+            echo ""
+            echo "Codex:"
+            echo ""
+            echo '```bash'
+            echo "codex plugin marketplace add anur4ag/pr-completion@${TAG}"
+            echo "codex plugin add pr-completion@pr-completion"
+            echo '```'
+            echo ""
+            echo "### Artifacts"
+            echo ""
+            echo "- \`pr-completion-${VERSION}-plugin.zip\` - full installable plugin tree"
+            echo "- \`pr-completion-${VERSION}-skills-source.zip\` - clean skills source archive"
+            echo "- \`SHA256SUMS.txt\` - SHA-256 digests for both ZIPs"
+            echo ""
+            echo "Docs: https://anur4ag.github.io/pr-completion/"
+          } > "${NOTES}"
+
+          gh release create "${TAG}" \
+            --title "v${VERSION}" \
+            --notes-file "${NOTES}" \
+            --verify-tag \
+            "release-out/pr-completion-${VERSION}-plugin.zip" \
+            "release-out/pr-completion-${VERSION}-skills-source.zip" \
+            "release-out/SHA256SUMS.txt"

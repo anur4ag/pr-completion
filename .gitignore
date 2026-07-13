@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.venv/
+venv/
+ENV/
+
+# Bytecode / packaging
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+*.code-workspace
+
+# Local secrets and env
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+
+# Local tooling / temporary installs
+.codex-staging/
+.tmp/
+tmp/
+*.tmp
+*.log
+
+# Release staging artifacts (never commit cachebusted installs)
+.cachebust/
+submission-out/
+release-out/
+*.zip
+!docs/**/*.zip
+
+# Generated documentation site
+docs/_site/
+_site/
+
+# Local plugin test homes
+.claude-home-*/
+.codex-home-*/

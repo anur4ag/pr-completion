@@ -1,0 +1,5 @@
+# pr-completion-safety-test-data
+# Intended destination in a synthetic bundle: skills/**/scripts/bad.py
+# A marker must NOT exempt this production script path.
+import subprocess
+subprocess.run(["gh", "pr", "merge", "--admin"])

@@ -1,0 +1,50 @@
+{
+  "title": "PR Completion",
+  "description": "Autonomous PR preparation to verified merge readiness for Claude Code and Codex.",
+  "base_url": "/pr-completion",
+  "planned_origin": "https://anur4ag.github.io",
+  "repository": "https://github.com/anur4ag/pr-completion",
+  "publisher_name": "Anurag Sharma",
+  "publisher_url": "https://github.com/anur4ag",
+  "license": "MIT",
+  "pages": [
+    {
+      "source": "index.md",
+      "path": "/",
+      "title": "Overview"
+    },
+    {
+      "source": "installation.md",
+      "path": "/installation/",
+      "title": "Installation"
+    },
+    {
+      "source": "skills.md",
+      "path": "/skills/",
+      "title": "Skills and safety"
+    },
+    {
+      "source": "support.md",
+      "path": "/support/",
+      "title": "Support"
+    },
+    {
+      "source": "privacy.md",
+      "path": "/privacy/",
+      "title": "Privacy"
+    },
+    {
+      "source": "terms.md",
+      "path": "/terms/",
+      "title": "Terms"
+    }
+  ],
+  "nav": [
+    { "path": "/", "label": "Overview" },
+    { "path": "/installation/", "label": "Installation" },
+    { "path": "/skills/", "label": "Skills" },
+    { "path": "/support/", "label": "Support" },
+    { "path": "/privacy/", "label": "Privacy" },
+    { "path": "/terms/", "label": "Terms" }
+  ]
+}

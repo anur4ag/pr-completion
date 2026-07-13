@@ -1,0 +1,2 @@
+# pr-completion-safety-test-data
+gh pr merge --squash

@@ -1,0 +1,38 @@
+{
+  "targets": [
+    {
+      "path": "/fixture/current",
+      "kind": "current",
+      "repository": "example/current",
+      "pr": {
+        "number": 404,
+        "url": "https://github.com/example/current/pull/404",
+        "state": "OPEN",
+        "isDraft": false,
+        "headRefName": "feature/ready",
+        "headRefOid": "head-ready",
+        "baseRefName": "main",
+        "baseRefOid": "base-four",
+        "mergeable": "MERGEABLE",
+        "mergeStateStatus": "CLEAN",
+        "reviewDecision": "APPROVED",
+        "autoMergeRequest": null,
+        "mergedAt": null,
+        "reviews": []
+      },
+      "checks": [
+        {
+          "name": "compile",
+          "state": "SUCCESS",
+          "bucket": "pass"
+        },
+        {
+          "name": "tests",
+          "state": "SUCCESS",
+          "bucket": "pass"
+        }
+      ],
+      "reviewThreads": []
+    }
+  ]
+}
