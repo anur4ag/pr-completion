@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Reproducible OpenAI skills-only directory submission packaging pinned to the exact `v0.1.0` tag and published skills-source checksum.
+- Complete public listing, logo, starter prompts, release notes, availability guidance, and five positive plus three negative reviewer cases.
+
 ## [0.1.0] - 2026-07-14
 
 Initial public dual-harness release.

@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "submissionType": "skills-only",
+  "pluginName": "PR Completion",
+  "category": "Productivity",
+  "shortDescription": "Drive GitHub pull requests to verified merge readiness without merging.",
+  "longDescription": "PR Completion packages four coordinated skills for preparing local changes, watching GitHub pull-request state, repairing branch-caused CI failures, triaging review feedback, and resolving upstream conflicts. It verifies the current head, required checks, approvals, review threads, and mergeability, then stops at merge readiness. It never merges, enables auto-merge, joins a merge queue, bypasses protections, rewrites history, or force-pushes.",
+  "developerIdentity": {
+    "displayName": "Anurag Sharma",
+    "publisherType": "individual",
+    "portalVerification": "requires-confirmation"
+  },
+  "logo": "assets/logo.png",
+  "websiteURL": "https://anur4ag.github.io/pr-completion/",
+  "supportURL": "https://anur4ag.github.io/pr-completion/support/",
+  "privacyPolicyURL": "https://anur4ag.github.io/pr-completion/privacy/",
+  "termsOfServiceURL": "https://anur4ag.github.io/pr-completion/terms/",
+  "repositoryURL": "https://github.com/anur4ag/pr-completion",
+  "releaseURL": "https://github.com/anur4ag/pr-completion/releases/tag/v0.1.0",
+  "source": {
+    "tag": "v0.1.0",
+    "commit": "e56ef4e79f44e295cb17dc66b3b03f622c780f09",
+    "skillsSourceSHA256": "1cc653d0b5b9879109c31105c98a3d211f484ad409f6b23c6336f255e525536e"
+  },
+  "containsMCP": false,
+  "authentication": "Uses the user's existing local GitHub CLI authentication; the plugin operates no credential service and stores no credentials.",
+  "dataHandling": "Runs locally with no plugin-operated backend or telemetry. Repository and pull-request data is sent only through tools the user invokes, principally GitHub via gh."
+}

@@ -72,6 +72,7 @@ def _seed_complete_package(root: Path, version: str = "0.1.0") -> None:
         "skills",
         "scripts",
         "docs",
+        "submission",
         ".github",
     ):
         source = ROOT / name
@@ -198,11 +199,12 @@ class RequiredSurfaceDeletionTests(unittest.TestCase):
         elif path.exists() or path.is_symlink():
             path.unlink()
 
-    def test_required_file_groups_cover_ticket_3_4_and_5_surfaces(self) -> None:
+    def test_required_file_groups_cover_ticket_3_through_6_surfaces(self) -> None:
         groups = validate_mod.REQUIRED_FILE_GROUPS
         self.assertIn("ticket-3-ci-runners", groups)
         self.assertIn("ticket-4-public-docs", groups)
         self.assertIn("ticket-5-release", groups)
+        self.assertIn("ticket-6-openai-submission", groups)
         self.assertIn("verification-test-modules", groups)
         self.assertIn("watcher-install-fixtures", groups)
         self.assertIn("docs-assets", groups)
@@ -216,6 +218,7 @@ class RequiredSurfaceDeletionTests(unittest.TestCase):
             ".github/workflows/pages.yml",
             ".github/workflows/release.yml",
             "scripts/package-release.py",
+            "scripts/package-openai-submission.py",
             "scripts/install-smoke.py",
             "scripts/run-ci-validation.py",
             "scripts/run-watcher-tests.py",
@@ -228,6 +231,9 @@ class RequiredSurfaceDeletionTests(unittest.TestCase):
             "scripts/tests/test_package_tooling.py",
             "scripts/tests/test_contamination.py",
             "scripts/tests/test_install_smoke.py",
+            "scripts/tests/test_openai_submission.py",
+            "submission/openai/listing.json",
+            "submission/openai/test-cases.json",
             "skills/take-pr-to-completion/tests/fixtures/ready-to-merge.json",
             "skills/take-pr-to-completion/tests/fixtures/blocked.json",
             "skills/take-pr-to-completion/tests/fixtures/repository-layout.json",

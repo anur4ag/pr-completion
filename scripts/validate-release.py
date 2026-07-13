@@ -159,6 +159,18 @@ REQUIRED_FILE_GROUPS: dict[str, tuple[str, ...]] = {
         ".github/workflows/release.yml",
         "scripts/package-release.py",
     ),
+    "ticket-6-openai-submission": (
+        "scripts/package-openai-submission.py",
+        "submission/openai/README.md",
+        "submission/openai/assets/logo.png",
+        "submission/openai/availability.md",
+        "submission/openai/fixtures/ci-failure.json",
+        "submission/openai/listing.json",
+        "submission/openai/portal-checklist.md",
+        "submission/openai/release-notes.md",
+        "submission/openai/starter-prompts.json",
+        "submission/openai/test-cases.json",
+    ),
     # Verification assets: tests, offline fixtures, and public CSS must ship.
     "verification-test-modules": (
         "skills/take-pr-to-completion/tests/test_pr_watch.py",
@@ -166,6 +178,7 @@ REQUIRED_FILE_GROUPS: dict[str, tuple[str, ...]] = {
         "scripts/tests/test_contamination.py",
         "scripts/tests/test_install_smoke.py",
         "scripts/tests/test_discovery_guards.py",
+        "scripts/tests/test_openai_submission.py",
     ),
     "watcher-install-fixtures": (
         "skills/take-pr-to-completion/tests/fixtures/ready-to-merge.json",

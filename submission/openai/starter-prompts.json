@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "prompts": [
+    "Use PR Completion to validate and commit my task-related changes, push them, and shepherd the current pull request until its current head is verified merge-ready. Do not merge or enable auto-merge.",
+    "Use PR Completion to find changes owned by this parent repository and its submodules, run each repository's required checks, and create scoped commits without staging unrelated work.",
+    "Use PR Completion to diagnose the failed checks on this pull request, fix only branch-caused failures, validate the repair, push it, and resume watching the new head.",
+    "Use PR Completion to triage every unresolved review thread against the current code, fix real findings, explain stale or false-positive findings with evidence, and return the PR to merge readiness.",
+    "Use PR Completion to resolve the upstream conflicts on this pull-request branch without rewriting history or force-pushing, validate the combined behavior, and resume the merge-readiness watcher."
+  ]
+}
