@@ -136,6 +136,15 @@ class ContaminationRejectionTests(unittest.TestCase):
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("does not match VERSION", completed.stderr)
 
+    def test_string_default_prompt_is_rejected(self) -> None:
+        codex = self.root / ".codex-plugin" / "plugin.json"
+        payload = json.loads(codex.read_text(encoding="utf-8"))
+        payload["interface"]["defaultPrompt"] = "Use PR Completion."
+        codex.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        completed = _run_validate(self.root)
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("defaultPrompt", completed.stderr)
+
     def test_cachebuster_metadata_is_rejected(self) -> None:
         codex = self.root / ".codex-plugin" / "plugin.json"
         payload = json.loads(codex.read_text(encoding="utf-8"))

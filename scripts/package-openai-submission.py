@@ -1,19 +1,23 @@
 #!/usr/bin/env python3
 """Build and validate the OpenAI portal upload package for a public release.
 
-Portal evidence (v0.1.0 rejection):
+Portal evidence:
   1. skills-only ZIP rejected: missing supported plugin manifest at ZIP root
      or inside the sole top-level directory.
   2. full plugin ZIP rejected without interface.composerIcon and interface.logo
      referencing square images.
-  3. Verified portal identity is Business — Traycer.
+  3. v0.1.1 passed client-side manifest/icon checks but its 93-member,
+     1,067,320-byte full-release upload failed generically.
+  4. Verified portal identity is Business — Traycer.
 
-The authenticated upload artifact is therefore the public plugin package
-(manifests + skills + referenced square assets + release surfaces), not a
-skills-tree-only ZIP and not a private overlay that differs from the tagged
-public release.
+The authenticated upload artifact is therefore a minimal plugin package:
+the Codex manifest, runtime skill files, and referenced square assets under
+one top-level directory. Release workflows, docs, tests, submission materials,
+and alternate-harness manifests are intentionally excluded.
 
-Pins below are filled after the v0.1.1 tag and GitHub Release exist.
+Pins below describe the last published release whose immutable full-plugin
+artifact is checked independently. A pre-release ``--from-working-tree`` build
+uses VERSION and does not reuse these historical pins.
 Immutable-tag reconstruction enforces the portable content fingerprint.
 Exact published ZIP bytes are verified only by the independent hosted
 release-integrity job (not by content equivalence alone).
@@ -57,9 +61,9 @@ RELEASE_PLUGIN_CONTENT_SHA256 = (
     "39fa994d3cebddbcffde2a7ebdf1ea669a1f0880cc362d0f4ce8d3cdfa8fa989"
 )
 
-PORTAL_ARCHIVE_ROOT = f"pr-completion-{RELEASE_VERSION}"
-MATERIALS_ARCHIVE_ROOT = f"pr-completion-{RELEASE_VERSION}-openai-materials"
 ZIP_DATE_TIME = (1980, 1, 1, 0, 0, 0)
+MAX_PORTAL_ZIP_BYTES = 1024 * 1024
+PORTAL_SKILL_EXCLUDED_PARTS = frozenset({"tests", "__pycache__"})
 
 ALLOWED_MATERIAL_PATHS = (
     "README.md",
@@ -260,6 +264,45 @@ def load_working_tree_files(repo: Path) -> dict[str, tuple[int, bytes]]:
     return entries
 
 
+def read_working_version(repo: Path) -> str:
+    value = (repo / "VERSION").read_text(encoding="utf-8").strip()
+    if not re.fullmatch(r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)", value):
+        raise SubmissionError(f"working VERSION must be plain SemVer (got {value!r})")
+    return value
+
+
+def select_portal_members(
+    source_members: dict[str, tuple[int, bytes]],
+) -> dict[str, tuple[int, bytes]]:
+    """Return only files required by the authenticated skills-only upload."""
+    manifest_relative = ".codex-plugin/plugin.json"
+    codex = _decode_json_member(source_members, manifest_relative)
+    interface = codex.get("interface")
+    if not isinstance(interface, dict):
+        raise SubmissionError(f"{manifest_relative} missing interface object")
+
+    selected_paths = {manifest_relative}
+    for field in ("composerIcon", "logo"):
+        relative = resolve_plugin_relative(interface.get(field))
+        selected_paths.add(relative)
+
+    selected_paths.update(
+        relative
+        for relative in source_members
+        if relative.startswith("skills/")
+        and not any(
+            part in PORTAL_SKILL_EXCLUDED_PARTS for part in Path(relative).parts
+        )
+    )
+    missing = sorted(selected_paths - source_members.keys())
+    if missing:
+        raise SubmissionError(f"minimal portal package missing required members: {missing}")
+    selected = {relative: source_members[relative] for relative in sorted(selected_paths)}
+    if not any(relative.endswith("/SKILL.md") for relative in selected):
+        raise SubmissionError("minimal portal package contains no SKILL.md files")
+    return selected
+
+
 def _write_zip(path: Path, members: list[tuple[str, int, bytes]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
@@ -324,6 +367,7 @@ def build_portal_plugin_zip(
     out_path: Path,
     members: dict[str, tuple[int, bytes]],
     *,
+    archive_version: str,
     enforce_content_pin: bool = False,
 ) -> str:
     """Write the portal plugin ZIP.
@@ -334,11 +378,19 @@ def build_portal_plugin_zip(
     enforced only via :func:`verify_published_zip_bytes` (separate gate).
     """
     ordered = sorted(members)
+    archive_root = f"pr-completion-{archive_version}"
     zip_members = [
-        (f"{PORTAL_ARCHIVE_ROOT}/{relative}", members[relative][0], members[relative][1])
+        (f"{archive_root}/{relative}", members[relative][0], members[relative][1])
         for relative in ordered
     ]
     _write_zip(out_path, zip_members)
+    archive_size = out_path.stat().st_size
+    if archive_size > MAX_PORTAL_ZIP_BYTES:
+        out_path.unlink(missing_ok=True)
+        raise SubmissionError(
+            "minimal portal ZIP exceeds the conservative 1 MiB upload guard: "
+            f"{archive_size} > {MAX_PORTAL_ZIP_BYTES} bytes"
+        )
     digest = sha256_file(out_path)
     if enforce_content_pin:
         verify_content_pin(members)
@@ -391,7 +443,9 @@ def resolve_plugin_relative(value: str) -> str:
     return value[2:]
 
 
-def validate_portal_package(members: dict[str, tuple[int, bytes]]) -> dict[str, Any]:
+def validate_portal_package(
+    members: dict[str, tuple[int, bytes]], *, expected_version: str
+) -> dict[str, Any]:
     """Enforce authenticated portal preflight against reconstructed members."""
     if not members:
         raise SubmissionError("portal package has no members")
@@ -406,13 +460,17 @@ def validate_portal_package(members: dict[str, tuple[int, bytes]]) -> dict[str, 
     manifest_rel = discover_manifest_relative(members)
     payload = _decode_json_member(members, manifest_rel)
     version = payload.get("version")
-    if version != RELEASE_VERSION:
+    if version != expected_version:
         raise SubmissionError(
             f"{manifest_rel} version {version!r} does not match release "
-            f"{RELEASE_VERSION!r}"
+            f"{expected_version!r}"
         )
     if payload.get("name") != "pr-completion":
         raise SubmissionError(f"{manifest_rel} name must be pr-completion")
+    if payload.get("skills") != "./skills/":
+        raise SubmissionError(
+            f"{manifest_rel} skills must be the plugin-root-relative ./skills/ path"
+        )
 
     # Codex portal path: visual fields live on the Codex manifest interface.
     codex = _decode_json_member(members, ".codex-plugin/plugin.json")
@@ -423,6 +481,15 @@ def validate_portal_package(members: dict[str, tuple[int, bytes]]) -> dict[str, 
         raise SubmissionError(
             "interface.developerName must be Traycer "
             f"({PORTAL_BUSINESS_IDENTITY} portal identity)"
+        )
+    default_prompt = interface.get("defaultPrompt")
+    if (
+        not isinstance(default_prompt, list)
+        or not default_prompt
+        or any(not isinstance(item, str) or not item.strip() for item in default_prompt)
+    ):
+        raise SubmissionError(
+            "interface.defaultPrompt must be a non-empty array of non-empty strings"
         )
     visuals = {}
     for field in ("composerIcon", "logo"):
@@ -440,6 +507,17 @@ def validate_portal_package(members: dict[str, tuple[int, bytes]]) -> dict[str, 
 
     # Assets must live inside the plugin root members (already enforced by
     # relative path resolution without .. and membership check).
+    unexpected = sorted(
+        relative
+        for relative in members
+        if relative != ".codex-plugin/plugin.json"
+        and not relative.startswith("skills/")
+        and relative not in {item["path"].removeprefix("./") for item in visuals.values()}
+    )
+    if unexpected:
+        raise SubmissionError(
+            f"minimal portal package contains non-runtime files: {unexpected}"
+        )
     return {
         "manifest": manifest_rel,
         "version": version,
@@ -486,7 +564,14 @@ def load_materials(materials_root: Path) -> dict[str, bytes]:
     return materials
 
 
-def validate_listing(materials_root: Path, materials: dict[str, bytes]) -> dict[str, Any]:
+def validate_listing(
+    materials_root: Path,
+    materials: dict[str, bytes],
+    *,
+    expected_version: str,
+    expected_ref: str,
+    enforce_published_pins: bool,
+) -> dict[str, Any]:
     listing = _load_json(materials_root / "listing.json")
     if not isinstance(listing, dict):
         raise SubmissionError("listing.json must contain an object")
@@ -500,19 +585,19 @@ def validate_listing(materials_root: Path, materials: dict[str, bytes]) -> dict[
         if listing.get(key) != expected:
             raise SubmissionError(f"listing.{key} must be {expected!r}")
     source = listing.get("source")
-    if not isinstance(source, dict) or source.get("tag") != RELEASE_REF:
-        raise SubmissionError("listing source.tag must match the pinned release tag")
-    if source.get("version") != RELEASE_VERSION:
-        raise SubmissionError("listing source.version must match the pinned release version")
+    if not isinstance(source, dict) or source.get("tag") != expected_ref:
+        raise SubmissionError("listing source.tag must match the target release tag")
+    if source.get("version") != expected_version:
+        raise SubmissionError("listing source.version must match the target release version")
     # Once RELEASE_COMMIT is populated, listing source.commit must equal it
     # exactly. Empty and wrong values both fail (no soft allowance for "").
-    if RELEASE_COMMIT:
+    if enforce_published_pins and RELEASE_COMMIT:
         if source.get("commit") != RELEASE_COMMIT:
             raise SubmissionError(
                 "listing source.commit must equal the pinned RELEASE_COMMIT "
                 f"({RELEASE_COMMIT!r}); got {source.get('commit')!r}"
             )
-    if RELEASE_PLUGIN_SHA256:
+    if enforce_published_pins and RELEASE_PLUGIN_SHA256:
         if source.get("portalPluginSHA256") != RELEASE_PLUGIN_SHA256:
             raise SubmissionError(
                 "listing source.portalPluginSHA256 does not match the published pin"
@@ -546,7 +631,7 @@ def validate_listing(materials_root: Path, materials: dict[str, bytes]) -> dict[
         raise SubmissionError("listing logo must point to assets/logo.png")
     logo = validate_png_bytes(materials["assets/logo.png"], label="assets/logo.png")
     expected_release = (
-        f"https://github.com/anur4ag/pr-completion/releases/tag/{RELEASE_REF}"
+        f"https://github.com/anur4ag/pr-completion/releases/tag/{expected_ref}"
     )
     if listing.get("releaseURL") != expected_release:
         raise SubmissionError(f"listing.releaseURL must be {expected_release}")
@@ -724,9 +809,12 @@ def check_urls(urls: list[str]) -> list[dict[str, Any]]:
     return results
 
 
-def build_materials_archive(out_path: Path, materials: dict[str, bytes]) -> str:
+def build_materials_archive(
+    out_path: Path, materials: dict[str, bytes], *, archive_version: str
+) -> str:
+    archive_root = f"pr-completion-{archive_version}-openai-materials"
     members = [
-        (f"{MATERIALS_ARCHIVE_ROOT}/{relative}", 0o644, materials[relative])
+        (f"{archive_root}/{relative}", 0o644, materials[relative])
         for relative in ALLOWED_MATERIAL_PATHS
     ]
     _write_zip(out_path, members)
@@ -764,47 +852,50 @@ def package_submission(
     repo = repo.resolve()
     materials_root = repo / "submission/openai"
     if from_working_tree:
-        members = load_working_tree_files(repo)
+        source_members = load_working_tree_files(repo)
+        package_version = read_working_version(repo)
         source_ref = "working-tree"
-        source_commit = None
+        target_ref = f"v{package_version}"
+        source_commit = str(_run_git(repo, ["rev-parse", "HEAD"], text=True)).strip()
     else:
         source_commit = resolve_tag(repo)
-        members = load_tagged_files(repo)
+        source_members = load_tagged_files(repo)
+        package_version = RELEASE_VERSION
         source_ref = RELEASE_REF
+        target_ref = RELEASE_REF
 
-    portal_meta = validate_portal_package(members)
+    if not from_working_tree:
+        verify_content_pin(source_members)
+    portal_members = select_portal_members(source_members)
+    portal_meta = validate_portal_package(
+        portal_members, expected_version=package_version
+    )
     materials = load_materials(materials_root)
-    listing_result = validate_listing(materials_root, materials)
+    listing_result = validate_listing(
+        materials_root,
+        materials,
+        expected_version=package_version,
+        expected_ref=target_ref,
+        enforce_published_pins=not from_working_tree,
+    )
     prompt_count = validate_prompts(materials_root)
-    case_results = validate_cases(materials_root, members)
+    case_results = validate_cases(materials_root, source_members)
     url_results = check_urls(listing_result["urls"]) if probe_urls else []
 
     out_dir = out_dir.resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-    portal_zip = out_dir / f"pr-completion-{RELEASE_VERSION}-portal-plugin.zip"
-    materials_zip = out_dir / f"pr-completion-{RELEASE_VERSION}-openai-materials.zip"
-    # Tag path: portable content pin only (exact ZIP bytes are a separate
-    # Ubuntu release-integrity gate). Working tree: package-release identity.
+    portal_zip = out_dir / f"pr-completion-{package_version}-portal-plugin.zip"
+    materials_zip = out_dir / f"pr-completion-{package_version}-openai-materials.zip"
     portal_digest = build_portal_plugin_zip(
         portal_zip,
-        members,
-        enforce_content_pin=not from_working_tree,
+        portal_members,
+        archive_version=package_version,
+        enforce_content_pin=False,
     )
     layout = inspect_portal_zip_layout(portal_zip)
-    materials_digest = build_materials_archive(materials_zip, materials)
-
-    if from_working_tree:
-        package_mod = _load_package_release_module()
-        with tempfile.TemporaryDirectory(prefix="pr-completion-portal-cmp-") as temporary:
-            compare_dir = Path(temporary)
-            package_mod.package_release(repo, compare_dir)
-            release_plugin = compare_dir / f"pr-completion-{RELEASE_VERSION}-plugin.zip"
-            release_digest = sha256_file(release_plugin)
-            if release_digest != portal_digest:
-                raise SubmissionError(
-                    "portal plugin ZIP is not byte-identical to package-release "
-                    f"plugin ZIP ({portal_digest} != {release_digest})"
-                )
+    materials_digest = build_materials_archive(
+        materials_zip, materials, archive_version=package_version
+    )
 
     checksums = out_dir / "SHA256SUMS.txt"
     checksums.write_text(
@@ -823,16 +914,17 @@ def package_submission(
             "manifest": portal_meta["manifest"],
             "visuals": portal_meta["visuals"],
             "sha256": portal_digest,
+            "bytes": portal_zip.stat().st_size,
             "note": (
-                "Upload this ZIP on the portal Skills tab. It contains the public "
-                "release manifest, skills, and square visual assets under one "
-                "top-level plugin directory."
+                "Upload this minimal ZIP on the portal Skills tab. It contains "
+                "only the Codex manifest, runtime skill files, and referenced "
+                "square visual assets under one top-level plugin directory."
             ),
         },
         "source": {
             "ref": source_ref,
             "commit": source_commit or RELEASE_COMMIT or None,
-            "version": RELEASE_VERSION,
+            "version": package_version,
             "memberCount": portal_meta["memberCount"],
             "portalPluginSHA256": portal_digest,
             "pinnedPluginSHA256": RELEASE_PLUGIN_SHA256 or None,
@@ -850,7 +942,7 @@ def package_submission(
         "urlChecks": url_results,
         "externalPortalState": {
             "verifiedIdentity": PORTAL_BUSINESS_IDENTITY,
-            "appsManagementWrite": "unconfirmed",
+            "appsManagementWrite": "confirmed-by-user",
             "submissionId": None,
             "status": "not-submitted",
         },
@@ -898,7 +990,7 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help=(
             "build from the current working tree (pre-tag local portal ZIP). "
-            "Requires package-release byte-identity."
+            "Uses VERSION and emits a minimal upload archive."
         ),
     )
     parser.add_argument(
