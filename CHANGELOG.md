@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- OpenAI packager: published checksum enforcement applies only to immutable-tag reconstruction; `--from-working-tree` compares only against contemporaneous `package-release` output.
+- Listing `source.commit` must equal pinned `RELEASE_COMMIT` exactly when that pin is set (empty and wrong values fail).
+- Hosted CI fetches full history and tags so immutable `v0.1.1` reconstruction runs deterministically (no silent skip).
+
+### Documentation
+
+- Recorded a one-time DCO exception for exactly two immutable ancestors (`a93a5d7`, `4af89ae`) on the `v0.1.1` history; future commits require `Signed-off-by`. No retag or history rewrite.
+
 ## [0.1.1] - 2026-07-14
 
 Portal-ready patch for the verified **Business — Traycer** publisher identity.

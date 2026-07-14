@@ -1,0 +1,79 @@
+# Enforce Developer Certificate of Origin on new commits.
+# Historical exception (immutable, do not rewrite): a93a5d7, 4af89ae only.
+name: dco
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dco-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dco:
+    name: signed-off-by
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify Signed-off-by on commits under review
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # One-time maintainer exception: these SHAs on the immutable v0.1.1
+          # ancestry may lack DCO trailers. Do not expand this list.
+          EXCEPTION_SHAS=$'a93a5d77f51a713f86578255271d59bf96a8e991\n4af89ae8e5648c4a6846773817aa9856c5f979a4'
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+            range="${BASE}..${HEAD}"
+          else
+            # Push to main: check commits introduced by this push when available.
+            BEFORE="${{ github.event.before }}"
+            AFTER="${{ github.sha }}"
+            if [ -n "${BEFORE}" ] && [ "${BEFORE}" != "0000000000000000000000000000000000000000" ] \
+              && git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+              range="${BEFORE}..${AFTER}"
+            else
+              range="${AFTER}^!"
+            fi
+          fi
+
+          mapfile -t commits < <(git rev-list --reverse "${range}")
+          if [ "${#commits[@]}" -eq 0 ]; then
+            echo "No commits in range ${range}; nothing to check."
+            exit 0
+          fi
+
+          failed=0
+          for sha in "${commits[@]}"; do
+            if printf '%s\n' "${EXCEPTION_SHAS}" | grep -qx "${sha}"; then
+              echo "OK (historical DCO exception): ${sha}"
+              continue
+            fi
+            body="$(git log -1 --format=%B "${sha}")"
+            if ! printf '%s\n' "${body}" | grep -Eq '^Signed-off-by: .+ <.+>$'; then
+              echo "MISSING Signed-off-by: ${sha}"
+              git log -1 --oneline "${sha}"
+              failed=1
+            else
+              echo "OK: ${sha}"
+            fi
+          done
+
+          if [ "${failed}" -ne 0 ]; then
+            echo "::error::One or more commits lack a DCO Signed-off-by trailer."
+            echo "Use: git commit -s"
+            echo "Exception list is fixed to a93a5d7 and 4af89ae only; do not expand it."
+            exit 1
+          fi

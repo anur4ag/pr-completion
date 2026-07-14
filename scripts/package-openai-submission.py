@@ -267,8 +267,18 @@ def _write_zip(path: Path, members: list[tuple[str, int, bytes]]) -> None:
 
 
 def build_portal_plugin_zip(
-    out_path: Path, members: dict[str, tuple[int, bytes]]
+    out_path: Path,
+    members: dict[str, tuple[int, bytes]],
+    *,
+    enforce_published_checksum: bool = True,
 ) -> str:
+    """Write the portal plugin ZIP.
+
+    ``enforce_published_checksum`` applies only to immutable-tag reconstruction
+    (the default packaging path). Working-tree builds compare against a
+    contemporaneous ``package-release`` output instead and must not demand the
+    tagged release pin when ``main`` has moved past the tag.
+    """
     ordered = sorted(members)
     zip_members = [
         (f"{PORTAL_ARCHIVE_ROOT}/{relative}", members[relative][0], members[relative][1])
@@ -276,7 +286,11 @@ def build_portal_plugin_zip(
     ]
     _write_zip(out_path, zip_members)
     digest = sha256_file(out_path)
-    if RELEASE_PLUGIN_SHA256 and digest != RELEASE_PLUGIN_SHA256:
+    if (
+        enforce_published_checksum
+        and RELEASE_PLUGIN_SHA256
+        and digest != RELEASE_PLUGIN_SHA256
+    ):
         out_path.unlink(missing_ok=True)
         raise SubmissionError(
             f"reconstructed portal plugin checksum {digest} does not match "
@@ -444,10 +458,14 @@ def validate_listing(materials_root: Path, materials: dict[str, bytes]) -> dict[
         raise SubmissionError("listing source.tag must match the pinned release tag")
     if source.get("version") != RELEASE_VERSION:
         raise SubmissionError("listing source.version must match the pinned release version")
-    if RELEASE_COMMIT and source.get("commit") not in {RELEASE_COMMIT, ""}:
-        # Allow empty commit pin before the tag lands; once pinned, require match.
+    # Once RELEASE_COMMIT is populated, listing source.commit must equal it
+    # exactly. Empty and wrong values both fail (no soft allowance for "").
+    if RELEASE_COMMIT:
         if source.get("commit") != RELEASE_COMMIT:
-            raise SubmissionError("listing source.commit does not match the pinned release")
+            raise SubmissionError(
+                "listing source.commit must equal the pinned RELEASE_COMMIT "
+                f"({RELEASE_COMMIT!r}); got {source.get('commit')!r}"
+            )
     if RELEASE_PLUGIN_SHA256:
         if source.get("portalPluginSHA256") != RELEASE_PLUGIN_SHA256:
             raise SubmissionError(
@@ -719,11 +737,16 @@ def package_submission(
     out_dir.mkdir(parents=True, exist_ok=True)
     portal_zip = out_dir / f"pr-completion-{RELEASE_VERSION}-portal-plugin.zip"
     materials_zip = out_dir / f"pr-completion-{RELEASE_VERSION}-openai-materials.zip"
-    portal_digest = build_portal_plugin_zip(portal_zip, members)
+    # Immutable tag path: enforce published plugin checksum.
+    # Working-tree path: only contemporaneous package-release identity.
+    portal_digest = build_portal_plugin_zip(
+        portal_zip,
+        members,
+        enforce_published_checksum=not from_working_tree,
+    )
     layout = inspect_portal_zip_layout(portal_zip)
     materials_digest = build_materials_archive(materials_zip, materials)
 
-    # Optional cross-check against package-release when building from working tree.
     if from_working_tree:
         package_mod = _load_package_release_module()
         with tempfile.TemporaryDirectory(prefix="pr-completion-portal-cmp-") as temporary:

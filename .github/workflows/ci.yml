@@ -35,6 +35,11 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          # Full history + tags so immutable v0.1.1 reconstruction and
+          # published-checksum gates run (do not silently skip).
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
@@ -44,8 +49,13 @@ jobs:
       - name: Show interpreter
         run: |
           python -c "import platform,sys; print(sys.version); print(platform.platform())"
+          git rev-parse --verify "refs/tags/v0.1.1^{commit}"
+          git rev-parse --verify "refs/tags/v0.1.0^{commit}"
 
       - name: Canonical validation (no live install smoke)
+        env:
+          # Fail (do not skip) if the immutable release tag is unavailable.
+          PR_COMPLETION_REQUIRE_RELEASE_TAG: "1"
         run: python -B scripts/run-ci-validation.py --skip-install-smoke
 
   # Live Claude/Codex marketplace installs from installed caches only.
