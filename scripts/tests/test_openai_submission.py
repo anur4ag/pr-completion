@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import struct
+import subprocess
 import sys
 import tempfile
 import types
@@ -279,6 +280,11 @@ class PortalPackageValidationTests(unittest.TestCase):
                 result["portal_zip"].stat().st_size,
                 submission.MAX_PORTAL_ZIP_BYTES,
             )
+            report = json.loads(result["report"].read_text(encoding="utf-8"))
+            runtime = report["portalUpload"]["runtimeSmoke"]
+            self.assertEqual(len(runtime["skills"]), 4)
+            self.assertEqual(runtime["watcherState"], "ready")
+            self.assertEqual(runtime["watcherActions"], [])
 
     def test_working_tree_build_skips_content_pin_enforcement(self) -> None:
         """Working-tree path does not enforce published content pin."""
@@ -327,6 +333,40 @@ class PortalPackageValidationTests(unittest.TestCase):
         self.assertIn("--from-working-tree", workflow)
         self.assertIn("portal-plugin.zip", workflow)
         self.assertIn("sha256sum ./*.zip", workflow)
+
+    def test_release_integrity_workflow_uses_both_byte_pins(self) -> None:
+        workflow = (ROOT / ".github/workflows/release-integrity.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("RELEASE_INSTALLABLE_SHA256", workflow)
+        self.assertIn("RELEASE_PORTAL_SHA256", workflow)
+        self.assertIn("verify_published_installable_zip_bytes", workflow)
+        self.assertIn("verify_published_portal_zip_bytes", workflow)
+
+    def test_default_cli_builds_current_minimal_portal_zip(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="openai-default-cli-") as temporary:
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-B",
+                    str(SCRIPT),
+                    "--out-dir",
+                    temporary,
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            portal = (
+                Path(temporary)
+                / f"pr-completion-{CURRENT_VERSION}-portal-plugin.zip"
+            )
+            self.assertTrue(portal.is_file())
+            layout = submission.inspect_portal_zip_layout(portal)
+            self.assertEqual(layout["members"], 9)
 
     def test_portal_zip_over_one_mib_is_rejected_and_removed(self) -> None:
         members = {
@@ -401,7 +441,7 @@ class ListingPinNegativeTests(unittest.TestCase):
             "version": submission.RELEASE_VERSION,
             "tag": submission.RELEASE_REF,
             "commit": submission.RELEASE_COMMIT,
-            "portalPluginSHA256": submission.RELEASE_PLUGIN_SHA256,
+            "portalPluginSHA256": submission.RELEASE_PORTAL_SHA256,
         }
         listing["source"].update(source_overrides)
         listing_path.write_text(
@@ -438,7 +478,7 @@ class ListingPinNegativeTests(unittest.TestCase):
         self.assertIn("source.commit", str(ctx.exception))
 
     def test_wrong_portal_plugin_checksum_rejected(self) -> None:
-        self.assertTrue(submission.RELEASE_PLUGIN_SHA256)
+        self.assertTrue(submission.RELEASE_PORTAL_SHA256)
         root = self._materials_with_source(portalPluginSHA256="0" * 64)
         materials = submission.load_materials(root)
         with self.assertRaises(submission.SubmissionError) as ctx:
@@ -500,7 +540,7 @@ class ImmutableTagDriftNegativeTests(unittest.TestCase):
             submission.RELEASE_PLUGIN_CONTENT_SHA256 = original_content
 
     def test_exact_byte_gate_fails_when_only_zip_pin_is_wrong(self) -> None:
-        """Wrong RELEASE_PLUGIN_SHA256 cannot pass via correct content pin."""
+        """Wrong installable byte pin cannot pass via correct content pin."""
         require = os.environ.get("PR_COMPLETION_REQUIRE_RELEASE_TAG") == "1"
         try:
             members = submission.load_tagged_files(ROOT)
@@ -531,25 +571,46 @@ class ImmutableTagDriftNegativeTests(unittest.TestCase):
             )
             submission.verify_content_pin(members)
             # Probe: only the published ZIP pin is poisoned.
-            original_zip = submission.RELEASE_PLUGIN_SHA256
-            submission.RELEASE_PLUGIN_SHA256 = "0" * 64
+            original_zip = submission.RELEASE_INSTALLABLE_SHA256
+            submission.RELEASE_INSTALLABLE_SHA256 = "0" * 64
             try:
                 with self.assertRaises(submission.SubmissionError) as ctx:
                     # Even a file whose content matches the real release cannot
                     # satisfy the exact-byte gate under a wrong pin constant.
-                    submission.verify_published_zip_bytes(out)
+                    submission.verify_published_installable_zip_bytes(out)
                 message = str(ctx.exception)
-                self.assertIn("exact published ZIP pin mismatch", message)
+                self.assertIn("installable ZIP pin mismatch", message)
                 self.assertIn(
                     "content equivalence is not a substitute", message
                 )
             finally:
-                submission.RELEASE_PLUGIN_SHA256 = original_zip
+                submission.RELEASE_INSTALLABLE_SHA256 = original_zip
 
             # Restoring the real pin: only a file that actually has the
             # published bytes succeeds (local rebuild may differ on Windows).
             # Use content pin still OK independently.
             submission.verify_content_pin(members)
+
+    def test_installable_and_portal_byte_pins_cannot_satisfy_each_other(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="openai-split-pins-") as temporary:
+            installable = Path(temporary) / "installable.zip"
+            portal = Path(temporary) / "portal.zip"
+            installable.write_bytes(b"full installable artifact")
+            portal.write_bytes(b"minimal portal artifact")
+            original_installable = submission.RELEASE_INSTALLABLE_SHA256
+            original_portal = submission.RELEASE_PORTAL_SHA256
+            submission.RELEASE_INSTALLABLE_SHA256 = submission.sha256_file(installable)
+            submission.RELEASE_PORTAL_SHA256 = submission.sha256_file(portal)
+            try:
+                submission.verify_published_installable_zip_bytes(installable)
+                submission.verify_published_portal_zip_bytes(portal)
+                with self.assertRaises(submission.SubmissionError):
+                    submission.verify_published_portal_zip_bytes(installable)
+                with self.assertRaises(submission.SubmissionError):
+                    submission.verify_published_installable_zip_bytes(portal)
+            finally:
+                submission.RELEASE_INSTALLABLE_SHA256 = original_installable
+                submission.RELEASE_PORTAL_SHA256 = original_portal
 
 
 class DCOIdentityTests(unittest.TestCase):

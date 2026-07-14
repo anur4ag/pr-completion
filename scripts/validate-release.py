@@ -409,6 +409,46 @@ def check_codex_portal_visuals(root: Path, findings: list[str]) -> None:
             )
 
 
+def check_public_version_surfaces(
+    root: Path, version: str | None, findings: list[str]
+) -> None:
+    if version is None:
+        return
+    expected_ref = f"v{version}"
+    required_text = {
+        "README.md": (f"`VERSION` `{version}`", f"@{expected_ref}"),
+        "docs/index.md": (f"Release {expected_ref}",),
+        "docs/installation.md": (f"Pin {expected_ref}", f"@{expected_ref}"),
+        "docs/support.md": (f"releases/tag/{expected_ref}",),
+    }
+    for relative, markers in required_text.items():
+        path = root / relative
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        for marker in markers:
+            if marker not in text:
+                findings.append(
+                    f"{relative}: current release surface missing {marker!r}"
+                )
+    site_path = root / "docs/site.json"
+    if site_path.is_file():
+        site = load_json(site_path, findings)
+        if site is not None:
+            expected_url = (
+                "https://github.com/anur4ag/pr-completion/releases/tag/"
+                f"{expected_ref}"
+            )
+            if site.get("release") != expected_url:
+                findings.append(
+                    f"docs/site.json: release must match current {expected_ref}"
+                )
+            if site.get("release_status") not in {"pending", "public"}:
+                findings.append(
+                    "docs/site.json: release_status must be pending or public"
+                )
+
+
 def check_skills(root: Path, findings: list[str]) -> None:
     skills_root = root / "skills"
     for skill in EXPECTED_SKILLS:
@@ -518,9 +558,10 @@ def check_package_hygiene(root: Path, findings: list[str]) -> None:
 def validate(root: Path) -> list[str]:
     findings: list[str] = []
     check_required_files(root, findings)
-    check_versions(root, findings)
+    version = check_versions(root, findings)
     check_publisher_metadata(root, findings)
     check_codex_portal_visuals(root, findings)
+    check_public_version_surfaces(root, version, findings)
     check_skills(root, findings)
     check_package_hygiene(root, findings)
     return findings

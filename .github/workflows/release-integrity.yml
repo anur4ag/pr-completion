@@ -45,7 +45,7 @@ jobs:
             --pattern 'SHA256SUMS.txt'
           ls -la /tmp/v011-assets
 
-      - name: Exact-byte integrity against RELEASE_PLUGIN_SHA256
+      - name: Exact-byte integrity against independent release pins
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -60,8 +60,10 @@ jobs:
           assert spec.loader is not None
           spec.loader.exec_module(mod)
 
-          expected = mod.RELEASE_PLUGIN_SHA256
-          assert expected and len(expected) == 64, "RELEASE_PLUGIN_SHA256 must be pinned"
+          expected_installable = mod.RELEASE_INSTALLABLE_SHA256
+          expected_portal = mod.RELEASE_PORTAL_SHA256
+          assert expected_installable and len(expected_installable) == 64
+          assert expected_portal and len(expected_portal) == 64
 
           sums = Path("/tmp/v011-assets/SHA256SUMS.txt").read_text(encoding="utf-8")
           match = re.search(
@@ -70,14 +72,19 @@ jobs:
               re.MULTILINE,
           )
           assert match, "SHA256SUMS.txt missing plugin.zip line"
-          assert match.group(1) == expected, (
-              f"SHA256SUMS plugin digest {match.group(1)} != pin {expected}"
+          assert match.group(1) == expected_installable, (
+              f"SHA256SUMS plugin digest {match.group(1)} != pin {expected_installable}"
           )
 
           zip_path = Path("/tmp/v011-assets/pr-completion-0.1.1-plugin.zip")
           # Independent exact-byte gate: content pin alone cannot satisfy this.
-          digest = mod.verify_published_zip_bytes(zip_path)
-          assert digest == expected
-          print(f"exact-byte OK: {digest}")
+          installable_digest = mod.verify_published_installable_zip_bytes(zip_path)
+          assert installable_digest == expected_installable
+          # v0.1.1 used the full plugin ZIP as its portal upload. The pins are
+          # deliberately separate so v0.1.2 can verify two distinct assets.
+          portal_digest = mod.verify_published_portal_zip_bytes(zip_path)
+          assert portal_digest == expected_portal
+          print(f"installable exact-byte OK: {installable_digest}")
+          print(f"portal exact-byte OK: {portal_digest}")
           print(f"content pin (portable): {mod.RELEASE_PLUGIN_CONTENT_SHA256}")
           PY

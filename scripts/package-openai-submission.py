@@ -25,6 +25,7 @@ release-integrity job (not by content equivalence alone).
 Usage:
   python3 -B scripts/package-openai-submission.py
   python3 -B scripts/package-openai-submission.py --from-working-tree
+  python3 -B scripts/package-openai-submission.py --from-pinned-release
   python3 -B scripts/package-openai-submission.py --check-urls
 """
 
@@ -52,8 +53,15 @@ RELEASE_REF = "v0.1.1"
 # Filled after tag + release publish. Empty string means "resolve from tag /
 # working tree and skip published-checksum pin until set".
 RELEASE_COMMIT = "52b2f8b710a20389237204092bbe67dd65ed89e8"
-# Published GitHub Release plugin ZIP bytes (produced on ubuntu-latest release job).
-RELEASE_PLUGIN_SHA256 = "3811207f95feda2d79bc3995f316411ed32e5f7bcad139863ec70c94735af02c"
+# Published GitHub Release installable plugin ZIP bytes.
+RELEASE_INSTALLABLE_SHA256 = (
+    "3811207f95feda2d79bc3995f316411ed32e5f7bcad139863ec70c94735af02c"
+)
+# Published portal-upload ZIP bytes. v0.1.1 reused the full installable ZIP;
+# v0.1.2 and later publish a distinct minimal portal asset.
+RELEASE_PORTAL_SHA256 = (
+    "3811207f95feda2d79bc3995f316411ed32e5f7bcad139863ec70c94735af02c"
+)
 # Platform-independent fingerprint of sorted (path, mode, content) members of
 # that same package. ZIP container bytes can differ across zlib/platform even
 # when member payloads are identical; content pin covers that case.
@@ -343,22 +351,39 @@ def verify_content_pin(members: dict[str, tuple[int, bytes]]) -> str:
     return content_digest
 
 
-def verify_published_zip_bytes(zip_path: Path) -> str:
-    """Independent exact-byte gate for the published plugin ZIP.
+def verify_published_installable_zip_bytes(zip_path: Path) -> str:
+    """Independent exact-byte gate for the published installable plugin ZIP.
 
     This path cannot pass via content fingerprint alone. A wrong
-    ``RELEASE_PLUGIN_SHA256`` always fails here even when member content is
+    ``RELEASE_INSTALLABLE_SHA256`` always fails here even when member content is
     correct. Use only for release-integrity (Ubuntu download / pin probe).
     """
-    if not RELEASE_PLUGIN_SHA256:
+    if not RELEASE_INSTALLABLE_SHA256:
         raise SubmissionError(
-            "RELEASE_PLUGIN_SHA256 is not pinned; cannot verify exact published ZIP bytes"
+            "RELEASE_INSTALLABLE_SHA256 is not pinned; cannot verify exact "
+            "published installable ZIP bytes"
         )
     digest = sha256_file(zip_path)
-    if digest != RELEASE_PLUGIN_SHA256:
+    if digest != RELEASE_INSTALLABLE_SHA256:
         raise SubmissionError(
-            "exact published ZIP pin mismatch (content equivalence is not a substitute): "
-            f"{digest} != {RELEASE_PLUGIN_SHA256}"
+            "exact published installable ZIP pin mismatch (content equivalence is not "
+            f"a substitute): {digest} != {RELEASE_INSTALLABLE_SHA256}"
+        )
+    return digest
+
+
+def verify_published_portal_zip_bytes(zip_path: Path) -> str:
+    """Independent exact-byte gate for the minimal portal-upload ZIP."""
+    if not RELEASE_PORTAL_SHA256:
+        raise SubmissionError(
+            "RELEASE_PORTAL_SHA256 is not pinned; cannot verify exact published "
+            "portal ZIP bytes"
+        )
+    digest = sha256_file(zip_path)
+    if digest != RELEASE_PORTAL_SHA256:
+        raise SubmissionError(
+            "exact published portal ZIP pin mismatch: "
+            f"{digest} != {RELEASE_PORTAL_SHA256}"
         )
     return digest
 
@@ -375,7 +400,7 @@ def build_portal_plugin_zip(
     Portable reconstruction (tag path on any OS) may set
     ``enforce_content_pin=True`` so member identity is checked without
     requiring Ubuntu ZIP container bytes. Exact published ZIP bytes are
-    enforced only via :func:`verify_published_zip_bytes` (separate gate).
+    enforced only via the separate published-asset byte gates.
     """
     ordered = sorted(members)
     archive_root = f"pr-completion-{archive_version}"
@@ -597,8 +622,8 @@ def validate_listing(
                 "listing source.commit must equal the pinned RELEASE_COMMIT "
                 f"({RELEASE_COMMIT!r}); got {source.get('commit')!r}"
             )
-    if enforce_published_pins and RELEASE_PLUGIN_SHA256:
-        if source.get("portalPluginSHA256") != RELEASE_PLUGIN_SHA256:
+    if enforce_published_pins and RELEASE_PORTAL_SHA256:
+        if source.get("portalPluginSHA256") != RELEASE_PORTAL_SHA256:
             raise SubmissionError(
                 "listing source.portalPluginSHA256 does not match the published pin"
             )
@@ -842,6 +867,90 @@ def inspect_portal_zip_layout(zip_path: Path) -> dict[str, Any]:
     return {"topLevel": top, "members": len(relatives)}
 
 
+def validate_extracted_portal_runtime(
+    zip_path: Path, *, fixture_bytes: bytes
+) -> dict[str, Any]:
+    """Smoke-test the exact minimal archive from an installed-like location."""
+    expected_skills = {
+        "commit-workspace-changes",
+        "gh-review-comment-triage",
+        "merge-conflict-resolution",
+        "take-pr-to-completion",
+    }
+    with tempfile.TemporaryDirectory(prefix="pr-completion-portal-runtime-") as temporary:
+        root = Path(temporary)
+        extracted = root / "installed"
+        with zipfile.ZipFile(zip_path) as archive:
+            infos = archive.infolist()
+            for info in infos:
+                path = Path(info.filename)
+                if path.is_absolute() or ".." in path.parts:
+                    raise SubmissionError(
+                        f"portal ZIP contains unsafe extraction path: {info.filename}"
+                    )
+                mode = (info.external_attr >> 16) & 0o170000
+                if mode == 0o120000:
+                    raise SubmissionError(
+                        f"portal ZIP contains unsupported symlink: {info.filename}"
+                    )
+            archive.extractall(extracted)
+
+        layout = inspect_portal_zip_layout(zip_path)
+        plugin_root = extracted / layout["topLevel"]
+        discovered_skills = {
+            path.parent.name
+            for path in (plugin_root / "skills").glob("*/SKILL.md")
+            if path.is_file()
+        }
+        if discovered_skills != expected_skills:
+            raise SubmissionError(
+                "extracted portal ZIP skill inventory mismatch: "
+                f"{sorted(discovered_skills)} != {sorted(expected_skills)}"
+            )
+
+        watcher = (
+            plugin_root
+            / "skills"
+            / "take-pr-to-completion"
+            / "scripts"
+            / "pr_watch.py"
+        )
+        if not watcher.is_file():
+            raise SubmissionError("extracted portal ZIP is missing pr_watch.py")
+        fixture = root / "ready-to-merge.json"
+        fixture.write_bytes(fixture_bytes)
+        run_cwd = root / "third-party-repository"
+        run_cwd.mkdir()
+        completed = subprocess.run(
+            [sys.executable, "-B", str(watcher), "--fixture", str(fixture)],
+            cwd=run_cwd,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise SubmissionError(
+                "extracted portal watcher smoke failed with exit "
+                f"{completed.returncode}: {completed.stderr.strip()}"
+            )
+        try:
+            observation = json.loads(completed.stdout)
+        except json.JSONDecodeError as error:
+            raise SubmissionError(
+                "extracted portal watcher emitted invalid JSON"
+            ) from error
+        if observation.get("state") != "ready" or observation.get("actions") != []:
+            raise SubmissionError(
+                "extracted portal watcher did not produce ready with no actions"
+            )
+        return {
+            "skills": sorted(discovered_skills),
+            "watcherState": observation["state"],
+            "watcherActions": observation["actions"],
+        }
+
+
 def package_submission(
     repo: Path,
     out_dir: Path,
@@ -893,6 +1002,17 @@ def package_submission(
         enforce_content_pin=False,
     )
     layout = inspect_portal_zip_layout(portal_zip)
+    runtime_fixture_relative = (
+        "skills/take-pr-to-completion/tests/fixtures/ready-to-merge.json"
+    )
+    if runtime_fixture_relative not in source_members:
+        raise SubmissionError(
+            f"runtime smoke fixture missing from source: {runtime_fixture_relative}"
+        )
+    runtime_smoke = validate_extracted_portal_runtime(
+        portal_zip,
+        fixture_bytes=source_members[runtime_fixture_relative][1],
+    )
     materials_digest = build_materials_archive(
         materials_zip, materials, archive_version=package_version
     )
@@ -915,6 +1035,7 @@ def package_submission(
             "visuals": portal_meta["visuals"],
             "sha256": portal_digest,
             "bytes": portal_zip.stat().st_size,
+            "runtimeSmoke": runtime_smoke,
             "note": (
                 "Upload this minimal ZIP on the portal Skills tab. It contains "
                 "only the Codex manifest, runtime skill files, and referenced "
@@ -927,7 +1048,8 @@ def package_submission(
             "version": package_version,
             "memberCount": portal_meta["memberCount"],
             "portalPluginSHA256": portal_digest,
-            "pinnedPluginSHA256": RELEASE_PLUGIN_SHA256 or None,
+            "pinnedInstallableSHA256": RELEASE_INSTALLABLE_SHA256 or None,
+            "pinnedPortalSHA256": RELEASE_PORTAL_SHA256 or None,
         },
         "materials": {
             "members": len(materials),
@@ -985,12 +1107,20 @@ def main(argv: list[str] | None = None) -> int:
         default=Path("submission-out"),
         help="output directory (default: submission-out)",
     )
-    parser.add_argument(
+    source_group = parser.add_mutually_exclusive_group()
+    source_group.add_argument(
         "--from-working-tree",
         action="store_true",
         help=(
-            "build from the current working tree (pre-tag local portal ZIP). "
-            "Uses VERSION and emits a minimal upload archive."
+            "explicitly build from the current working tree (this is the default)"
+        ),
+    )
+    source_group.add_argument(
+        "--from-pinned-release",
+        action="store_true",
+        help=(
+            "reconstruct the immutable RELEASE_REF package; intended only after "
+            "that release has a portal-compatible manifest and populated pins"
         ),
     )
     parser.add_argument(
@@ -1004,7 +1134,7 @@ def main(argv: list[str] | None = None) -> int:
             args.repo,
             args.out_dir,
             probe_urls=args.check_urls,
-            from_working_tree=args.from_working_tree,
+            from_working_tree=not args.from_pinned_release,
         )
     except SubmissionError as error:
         print(f"OpenAI submission packaging failed: {error}", file=sys.stderr)

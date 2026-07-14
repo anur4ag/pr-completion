@@ -19,7 +19,7 @@ Portal upload compatibility patch.
 - Added a conservative 1 MiB upload-size guard and schema/allowlist regressions for the exact rejected package shape.
 - OpenAI packager integrity is two independent gates (not an either/or pin):
   - Immutable-tag reconstruction enforces the portable member/content fingerprint (`RELEASE_PLUGIN_CONTENT_SHA256`) so local and multi-OS CI reconstruction does not depend on Ubuntu ZIP container bytes.
-  - Hosted `release-integrity` downloads the immutable published `v0.1.1` plugin ZIP and `SHA256SUMS.txt` and requires exact published ZIP bytes (`RELEASE_PLUGIN_SHA256`). Content fingerprint alone cannot satisfy that job.
+  - Hosted `release-integrity` downloads immutable published assets and independently checks the full installable ZIP (`RELEASE_INSTALLABLE_SHA256`) and the portal-upload ZIP (`RELEASE_PORTAL_SHA256`). Content fingerprint alone cannot satisfy either byte gate.
   - `--from-working-tree` compares only against contemporaneous `package-release` output (no published ZIP pin).
 - Listing `source.commit` must equal pinned `RELEASE_COMMIT` exactly when that pin is set (empty and wrong values fail).
 - Hosted CI fetches full history and tags so immutable `v0.1.1` reconstruction runs deterministically (no silent skip).

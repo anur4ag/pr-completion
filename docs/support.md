@@ -12,7 +12,7 @@ Use [GitHub Issues](https://github.com/anur4ag/pr-completion/issues) for install
 ## Project links
 
 - [Repository](https://github.com/anur4ag/pr-completion)
-- [Current release](https://github.com/anur4ag/pr-completion/releases/tag/v0.1.1)
+- [Current release](https://github.com/anur4ag/pr-completion/releases/tag/v0.1.2)
 - [Open an issue](https://github.com/anur4ag/pr-completion/issues)
 - [Installation](installation.md)
 - [Skills and safety](skills.md)

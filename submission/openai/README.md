@@ -16,8 +16,8 @@ This directory holds form inputs and validation fixtures for the PR Completion O
 From a clean checkout before the `v0.1.2` tag:
 
 ```bash
-# Pre-tag / local portal ZIP from the current tree
-python3 -B scripts/package-openai-submission.py --from-working-tree
+# Pre-tag / local portal ZIP from the current tree (default mode)
+python3 -B scripts/package-openai-submission.py
 ```
 
 Outputs under ignored `submission-out/`:

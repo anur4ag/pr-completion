@@ -43,7 +43,7 @@ class GeneratedMarkupTests(unittest.TestCase):
         self.assertEqual(len(ids), len(set(ids)))
         self.assertIn("install", ids)
         self.assertIn("install-2", ids)
-        self.assertIn("pin-v0-1-1-2", ids)
+        self.assertIn("pin-v0-1-2-2", ids)
         self.assertIn("update-2", ids)
         self.assertIn("inspect-or-remove-2", ids)
 
@@ -150,6 +150,20 @@ class CanonicalLinkTests(unittest.TestCase):
         self.assertIn("canonical", checked.stderr)
         self.assertIn("does not match", checked.stderr)
         self.assertNotIn("Traceback", checked.stderr)
+
+    def test_exact_pending_release_url_is_the_only_external_skip(self) -> None:
+        pending = "https://github.com/anur4ag/pr-completion/releases/tag/v0.1.2"
+        findings: list[str] = []
+        checked, unique, skipped = check_docs.check_external_http_links(
+            hrefs=[("docs/index.md", pending)],
+            extra_urls=[],
+            timeout=0.1,
+            max_workers=1,
+            skip_urls={pending},
+            findings=findings,
+        )
+        self.assertEqual((checked, unique, skipped), (0, 1, 1))
+        self.assertEqual(findings, [])
 
 
 if __name__ == "__main__":
