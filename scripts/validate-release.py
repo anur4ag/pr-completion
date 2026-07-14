@@ -322,7 +322,7 @@ def check_publisher_metadata(root: Path, findings: list[str]) -> None:
         elif str(author.get("name") or "").strip() != "Traycer":
             findings.append(
                 f"{relative}: author.name must be 'Traycer' for the verified "
-                "Business — Traycer portal identity"
+                "Business \u2014 Traycer portal identity"
             )
         repository = payload.get("repository")
         if not isinstance(repository, str) or "github.com/anur4ag/pr-completion" not in repository:

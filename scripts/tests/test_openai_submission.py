@@ -59,7 +59,10 @@ class OpenAISubmissionMaterialTests(unittest.TestCase):
         materials = submission.load_materials(materials_root)
         listing = submission.validate_listing(materials_root, materials)
         self.assertEqual(listing["logo"], {"width": 1024, "height": 1024})
-        self.assertEqual(listing["identity"]["portalLabel"], "Business — Traycer")
+        # Use \u2014 so Windows source decoding cannot corrupt the portal label.
+        self.assertEqual(
+            listing["identity"]["portalLabel"], "Business \u2014 Traycer"
+        )
         self.assertEqual(listing["identity"]["publisherType"], "business")
         self.assertEqual(submission.validate_prompts(materials_root), 5)
         payload = json.loads((materials_root / "test-cases.json").read_text())
@@ -91,12 +94,15 @@ class OpenAISubmissionMaterialTests(unittest.TestCase):
                     submission._scan_bytes(label, payload)
 
     def test_pinned_identity_constants_are_consistent_with_listing(self) -> None:
-        listing = json.loads((ROOT / "submission/openai/listing.json").read_text())
+        listing = json.loads(
+            (ROOT / "submission/openai/listing.json").read_text(encoding="utf-8")
+        )
         self.assertEqual(listing["source"]["tag"], submission.RELEASE_REF)
         self.assertEqual(listing["source"]["version"], submission.RELEASE_VERSION)
         self.assertEqual(listing["developerIdentity"]["displayName"], "Traycer")
         self.assertEqual(
-            listing["developerIdentity"]["portalLabel"], "Business — Traycer"
+            listing["developerIdentity"]["portalLabel"],
+            "Business \u2014 Traycer",
         )
 
 

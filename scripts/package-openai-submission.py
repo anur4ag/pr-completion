@@ -110,6 +110,8 @@ SUPPORTED_MANIFEST_RELATIVES = (
     ".claude-plugin/plugin.json",
     ".agent-plugin/plugin.json",
 )
+# Portal dropdown label (em dash). Use unicode escape for Windows source safety.
+PORTAL_BUSINESS_IDENTITY = "Business \u2014 Traycer"
 
 
 class SubmissionError(Exception):
@@ -359,7 +361,8 @@ def validate_portal_package(members: dict[str, tuple[int, bytes]]) -> dict[str, 
         raise SubmissionError(".codex-plugin/plugin.json missing interface object")
     if interface.get("developerName") != "Traycer":
         raise SubmissionError(
-            "interface.developerName must be Traycer (Business — Traycer portal identity)"
+            "interface.developerName must be Traycer "
+            f"({PORTAL_BUSINESS_IDENTITY} portal identity)"
         )
     visuals = {}
     for field in ("composerIcon", "logo"):
@@ -455,9 +458,10 @@ def validate_listing(materials_root: Path, materials: dict[str, bytes]) -> dict[
         raise SubmissionError("listing developerIdentity is required")
     if identity.get("displayName") != "Traycer":
         raise SubmissionError("listing developerIdentity.displayName must be Traycer")
-    if identity.get("portalLabel") != "Business — Traycer":
+    if identity.get("portalLabel") != PORTAL_BUSINESS_IDENTITY:
         raise SubmissionError(
-            "listing developerIdentity.portalLabel must be 'Business — Traycer'"
+            "listing developerIdentity.portalLabel must be "
+            f"{PORTAL_BUSINESS_IDENTITY!r}"
         )
     if identity.get("publisherType") != "business":
         raise SubmissionError("listing developerIdentity.publisherType must be business")
@@ -776,7 +780,7 @@ def package_submission(
         "testCases": case_results,
         "urlChecks": url_results,
         "externalPortalState": {
-            "verifiedIdentity": "Business — Traycer",
+            "verifiedIdentity": PORTAL_BUSINESS_IDENTITY,
             "appsManagementWrite": "unconfirmed",
             "submissionId": None,
             "status": "not-submitted",
