@@ -13,11 +13,14 @@ This directory holds form inputs and validation fixtures for the PR Completion O
 
 ## Build and validate
 
-From a clean checkout before the `v0.1.2` tag:
+From a clean checkout:
 
 ```bash
 # Pre-tag / local portal ZIP from the current tree (default mode)
 python3 -B scripts/package-openai-submission.py
+
+# Reconstruct and verify the immutable published v0.1.2 source and public URLs
+python3 -B scripts/package-openai-submission.py --from-pinned-release --check-urls
 ```
 
 Outputs under ignored `submission-out/`:

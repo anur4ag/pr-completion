@@ -6,7 +6,7 @@ Official workflow: <https://learn.chatgpt.com/docs/submit-plugins>
 
 - Submission type: **Skills only**; no MCP server, app ID, connector, demo account, domain challenge, or content-security-policy fields apply.
 - Verified portal developer identity to select: **Business — Traycer**.
-- Target plugin version / tag: `0.1.2` / `v0.1.2`.
+- Public plugin version / tag: `0.1.2` / `v0.1.2`.
 - Portal upload ZIP includes `.codex-plugin/plugin.json` under the sole top-level plugin directory, plus `skills/` and square `interface.composerIcon` / `interface.logo` assets.
 - `interface.defaultPrompt` is a non-empty array, matching the current published manifest example.
 - Portal upload ZIP is a deterministic minimal derivative of the same tagged source. It excludes non-runtime release, CI, docs, test, and submission files and must stay below the conservative 1 MiB upload guard.
