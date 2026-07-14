@@ -355,10 +355,25 @@ def check_codex_portal_visuals(root: Path, findings: list[str]) -> None:
     if not isinstance(interface, dict):
         findings.append(".codex-plugin/plugin.json: interface object is required")
         return
+    if payload.get("skills") != "./skills/":
+        findings.append(
+            ".codex-plugin/plugin.json: skills must be the plugin-root-relative "
+            "./skills/ path"
+        )
     developer = interface.get("developerName")
     if developer != "Traycer":
         findings.append(
             ".codex-plugin/plugin.json: interface.developerName must be 'Traycer'"
+        )
+    default_prompt = interface.get("defaultPrompt")
+    if (
+        not isinstance(default_prompt, list)
+        or not default_prompt
+        or any(not isinstance(item, str) or not item.strip() for item in default_prompt)
+    ):
+        findings.append(
+            ".codex-plugin/plugin.json: interface.defaultPrompt must be a "
+            "non-empty array of non-empty strings"
         )
     for field in ("composerIcon", "logo"):
         value = interface.get(field)

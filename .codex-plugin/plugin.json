@@ -1,6 +1,6 @@
 {
   "name": "pr-completion",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Validate and commit local changes, then deterministically watch GitHub pull requests through CI, reviews, conflicts, and verified merge readiness.",
   "author": {
     "name": "Traycer",
@@ -32,6 +32,8 @@
     "termsOfServiceURL": "https://anur4ag.github.io/pr-completion/terms/",
     "composerIcon": "./assets/traycer-icon.png",
     "logo": "./assets/traycer-icon.png",
-    "defaultPrompt": "Use $pr-completion:take-pr-to-completion to autonomously drive this pull request through CI, review, and conflicts until it is verified merge-ready. Do not merge or enable auto-merge."
+    "defaultPrompt": [
+      "Use $pr-completion:take-pr-to-completion to autonomously drive this pull request through CI, review, and conflicts until it is verified merge-ready. Do not merge or enable auto-merge."
+    ]
   }
 }

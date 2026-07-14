@@ -17,12 +17,12 @@
   "privacyPolicyURL": "https://anur4ag.github.io/pr-completion/privacy/",
   "termsOfServiceURL": "https://anur4ag.github.io/pr-completion/terms/",
   "repositoryURL": "https://github.com/anur4ag/pr-completion",
-  "releaseURL": "https://github.com/anur4ag/pr-completion/releases/tag/v0.1.1",
+  "releaseURL": "https://github.com/anur4ag/pr-completion/releases/tag/v0.1.2",
   "source": {
-    "version": "0.1.1",
-    "tag": "v0.1.1",
-    "commit": "52b2f8b710a20389237204092bbe67dd65ed89e8",
-    "portalPluginSHA256": "3811207f95feda2d79bc3995f316411ed32e5f7bcad139863ec70c94735af02c"
+    "version": "0.1.2",
+    "tag": "v0.1.2",
+    "commit": "",
+    "portalPluginSHA256": ""
   },
   "containsMCP": false,
   "authentication": "Uses the user's existing local GitHub CLI authentication; the plugin operates no credential service and stores no credentials.",

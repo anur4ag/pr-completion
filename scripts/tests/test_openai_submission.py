@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for portal-compliant OpenAI submission packaging (v0.1.1)."""
+"""Tests for portal-compliant OpenAI submission packaging."""
 
 from __future__ import annotations
 
@@ -34,6 +34,8 @@ def load_module() -> types.ModuleType:
 
 
 submission = load_module()
+CURRENT_VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+CURRENT_REF = f"v{CURRENT_VERSION}"
 
 
 def _square_png(size: int = 1024) -> bytes:
@@ -57,7 +59,13 @@ class OpenAISubmissionMaterialTests(unittest.TestCase):
     def test_materials_and_exact_case_counts_validate(self) -> None:
         materials_root = ROOT / "submission/openai"
         materials = submission.load_materials(materials_root)
-        listing = submission.validate_listing(materials_root, materials)
+        listing = submission.validate_listing(
+            materials_root,
+            materials,
+            expected_version=CURRENT_VERSION,
+            expected_ref=CURRENT_REF,
+            enforce_published_pins=False,
+        )
         self.assertEqual(listing["logo"], {"width": 1024, "height": 1024})
         # Use \u2014 so Windows source decoding cannot corrupt the portal label.
         self.assertEqual(
@@ -93,12 +101,12 @@ class OpenAISubmissionMaterialTests(unittest.TestCase):
                 with self.assertRaises(submission.SubmissionError):
                     submission._scan_bytes(label, payload)
 
-    def test_pinned_identity_constants_are_consistent_with_listing(self) -> None:
+    def test_target_identity_is_consistent_with_listing(self) -> None:
         listing = json.loads(
             (ROOT / "submission/openai/listing.json").read_text(encoding="utf-8")
         )
-        self.assertEqual(listing["source"]["tag"], submission.RELEASE_REF)
-        self.assertEqual(listing["source"]["version"], submission.RELEASE_VERSION)
+        self.assertEqual(listing["source"]["tag"], CURRENT_REF)
+        self.assertEqual(listing["source"]["version"], CURRENT_VERSION)
         self.assertEqual(listing["developerIdentity"]["displayName"], "Traycer")
         self.assertEqual(
             listing["developerIdentity"]["portalLabel"],
@@ -111,11 +119,13 @@ class PortalPackageValidationTests(unittest.TestCase):
         icon = (ROOT / "assets/traycer-icon.png").read_bytes()
         codex = {
             "name": "pr-completion",
-            "version": submission.RELEASE_VERSION,
+            "version": CURRENT_VERSION,
+            "skills": "./skills/",
             "interface": {
                 "developerName": "Traycer",
                 "composerIcon": "./assets/traycer-icon.png",
                 "logo": "./assets/traycer-icon.png",
+                "defaultPrompt": ["Use PR Completion for this pull request."],
             },
         }
         return {
@@ -125,19 +135,36 @@ class PortalPackageValidationTests(unittest.TestCase):
             ),
             "assets/traycer-icon.png": (0o644, icon),
             "skills/take-pr-to-completion/SKILL.md": (0o644, b"# skill\n"),
-            "VERSION": (0o644, f"{submission.RELEASE_VERSION}\n".encode("utf-8")),
         }
 
     def test_valid_portal_package_passes(self) -> None:
-        meta = submission.validate_portal_package(self._base_members())
+        meta = submission.validate_portal_package(
+            self._base_members(), expected_version=CURRENT_VERSION
+        )
         self.assertEqual(meta["manifest"], ".codex-plugin/plugin.json")
-        self.assertEqual(meta["version"], submission.RELEASE_VERSION)
+        self.assertEqual(meta["version"], CURRENT_VERSION)
+
+    def test_string_default_prompt_is_rejected(self) -> None:
+        members = self._base_members()
+        payload = json.loads(members[".codex-plugin/plugin.json"][1])
+        payload["interface"]["defaultPrompt"] = "Use PR Completion."
+        members[".codex-plugin/plugin.json"] = (
+            0o644,
+            (json.dumps(payload) + "\n").encode("utf-8"),
+        )
+        with self.assertRaises(submission.SubmissionError) as ctx:
+            submission.validate_portal_package(
+                members, expected_version=CURRENT_VERSION
+            )
+        self.assertIn("defaultPrompt", str(ctx.exception))
 
     def test_missing_manifest_is_rejected(self) -> None:
         members = self._base_members()
         del members[".codex-plugin/plugin.json"]
         with self.assertRaises(submission.SubmissionError) as ctx:
-            submission.validate_portal_package(members)
+            submission.validate_portal_package(
+                members, expected_version=CURRENT_VERSION
+            )
         message = str(ctx.exception).lower()
         self.assertTrue(
             "manifest" in message or "plugin.json" in message,
@@ -155,14 +182,18 @@ class PortalPackageValidationTests(unittest.TestCase):
             )
             with self.subTest(field=field):
                 with self.assertRaises(submission.SubmissionError) as ctx:
-                    submission.validate_portal_package(members)
+                    submission.validate_portal_package(
+                        members, expected_version=CURRENT_VERSION
+                    )
                 self.assertIn(field, str(ctx.exception))
 
     def test_missing_referenced_asset_is_rejected(self) -> None:
         members = self._base_members()
         del members["assets/traycer-icon.png"]
         with self.assertRaises(submission.SubmissionError) as ctx:
-            submission.validate_portal_package(members)
+            submission.validate_portal_package(
+                members, expected_version=CURRENT_VERSION
+            )
         self.assertIn("missing package member", str(ctx.exception))
 
     def test_non_square_asset_is_rejected(self) -> None:
@@ -174,7 +205,9 @@ class PortalPackageValidationTests(unittest.TestCase):
         data[16:24] = struct.pack(">II", 512, 256)
         members["assets/traycer-icon.png"] = (0o644, bytes(data))
         with self.assertRaises(submission.SubmissionError) as ctx:
-            submission.validate_portal_package(members)
+            submission.validate_portal_package(
+                members, expected_version=CURRENT_VERSION
+            )
         self.assertIn("square", str(ctx.exception).lower())
 
     def test_out_of_root_asset_path_is_rejected(self) -> None:
@@ -186,8 +219,19 @@ class PortalPackageValidationTests(unittest.TestCase):
             (json.dumps(payload) + "\n").encode("utf-8"),
         )
         with self.assertRaises(submission.SubmissionError) as ctx:
-            submission.validate_portal_package(members)
+            submission.validate_portal_package(
+                members, expected_version=CURRENT_VERSION
+            )
         self.assertIn("escapes", str(ctx.exception).lower())
+
+    def test_non_runtime_member_is_rejected(self) -> None:
+        members = self._base_members()
+        members["README.md"] = (0o644, b"not part of portal runtime\n")
+        with self.assertRaises(submission.SubmissionError) as ctx:
+            submission.validate_portal_package(
+                members, expected_version=CURRENT_VERSION
+            )
+        self.assertIn("non-runtime", str(ctx.exception))
 
     def test_portal_zip_layout_requires_sole_top_level_and_manifest(self) -> None:
         with tempfile.TemporaryDirectory(prefix="portal-layout-") as temporary:
@@ -198,14 +242,7 @@ class PortalPackageValidationTests(unittest.TestCase):
                 submission.inspect_portal_zip_layout(path)
             self.assertIn("manifest", str(ctx.exception).lower())
 
-    def test_working_tree_portal_build_matches_contemporaneous_package_release(
-        self,
-    ) -> None:
-        """Working-tree path must not demand the immutable tagged checksum.
-
-        Post-tag main may differ from v0.1.1; only package-release identity
-        is required for --from-working-tree.
-        """
+    def test_working_tree_portal_build_is_minimal_and_under_upload_guard(self) -> None:
         with tempfile.TemporaryDirectory(prefix="openai-package-") as temporary:
             out = Path(temporary)
             result = submission.package_submission(
@@ -217,23 +254,30 @@ class PortalPackageValidationTests(unittest.TestCase):
             self.assertTrue(result["portal_zip"].is_file())
             digest = result["portal_sha256"]
             self.assertEqual(len(digest), 64)
-            # Post-tag main can (and currently does) differ from the published
-            # pin; working-tree builds must still succeed.
-            if submission.RELEASE_PLUGIN_SHA256:
-                # Either equal (clean tree at tag) or unequal (main moved on);
-                # both are valid for working-tree mode.
-                self.assertIsInstance(digest, str)
             layout = submission.inspect_portal_zip_layout(result["portal_zip"])
             self.assertEqual(
-                layout["topLevel"], f"pr-completion-{submission.RELEASE_VERSION}"
+                layout["topLevel"], f"pr-completion-{CURRENT_VERSION}"
             )
             with zipfile.ZipFile(result["portal_zip"]) as archive:
-                names = archive.namelist()
-            self.assertTrue(
-                any(name.endswith(".codex-plugin/plugin.json") for name in names)
+                prefix = f"pr-completion-{CURRENT_VERSION}/"
+                names = {name.removeprefix(prefix) for name in archive.namelist()}
+            self.assertEqual(
+                names,
+                {
+                    ".codex-plugin/plugin.json",
+                    "assets/traycer-icon.png",
+                    "skills/commit-workspace-changes/SKILL.md",
+                    "skills/commit-workspace-changes/agents/openai.yaml",
+                    "skills/gh-review-comment-triage/SKILL.md",
+                    "skills/merge-conflict-resolution/SKILL.md",
+                    "skills/take-pr-to-completion/SKILL.md",
+                    "skills/take-pr-to-completion/agents/openai.yaml",
+                    "skills/take-pr-to-completion/scripts/pr_watch.py",
+                },
             )
-            self.assertTrue(
-                any(name.endswith("assets/traycer-icon.png") for name in names)
+            self.assertLessEqual(
+                result["portal_zip"].stat().st_size,
+                submission.MAX_PORTAL_ZIP_BYTES,
             )
 
     def test_working_tree_build_skips_content_pin_enforcement(self) -> None:
@@ -244,6 +288,7 @@ class PortalPackageValidationTests(unittest.TestCase):
             digest = submission.build_portal_plugin_zip(
                 out,
                 members,
+                archive_version=CURRENT_VERSION,
                 enforce_content_pin=False,
             )
             self.assertEqual(len(digest), 64)
@@ -252,6 +297,55 @@ class PortalPackageValidationTests(unittest.TestCase):
                 submission.members_content_sha256(members),
                 submission.RELEASE_PLUGIN_CONTENT_SHA256,
             )
+
+    def test_minimal_portal_zip_is_byte_deterministic(self) -> None:
+        source = submission.load_working_tree_files(ROOT)
+        members = submission.select_portal_members(source)
+        with tempfile.TemporaryDirectory(prefix="openai-deterministic-") as temporary:
+            first = Path(temporary) / "first.zip"
+            second = Path(temporary) / "second.zip"
+            first_digest = submission.build_portal_plugin_zip(
+                first,
+                members,
+                archive_version=CURRENT_VERSION,
+                enforce_content_pin=False,
+            )
+            second_digest = submission.build_portal_plugin_zip(
+                second,
+                members,
+                archive_version=CURRENT_VERSION,
+                enforce_content_pin=False,
+            )
+            self.assertEqual(first_digest, second_digest)
+            self.assertEqual(first.read_bytes(), second.read_bytes())
+
+    def test_release_workflow_publishes_minimal_portal_zip(self) -> None:
+        workflow = (ROOT / ".github/workflows/release.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("package-openai-submission.py", workflow)
+        self.assertIn("--from-working-tree", workflow)
+        self.assertIn("portal-plugin.zip", workflow)
+        self.assertIn("sha256sum ./*.zip", workflow)
+
+    def test_portal_zip_over_one_mib_is_rejected_and_removed(self) -> None:
+        members = {
+            "skills/example/payload.bin": (
+                0o644,
+                os.urandom(submission.MAX_PORTAL_ZIP_BYTES + 32_768),
+            )
+        }
+        with tempfile.TemporaryDirectory(prefix="openai-size-guard-") as temporary:
+            out = Path(temporary) / "portal.zip"
+            with self.assertRaises(submission.SubmissionError) as ctx:
+                submission.build_portal_plugin_zip(
+                    out,
+                    members,
+                    archive_version=CURRENT_VERSION,
+                    enforce_content_pin=False,
+                )
+            self.assertIn("1 MiB", str(ctx.exception))
+            self.assertFalse(out.exists())
 
     def test_immutable_tag_reconstruction_enforces_content_pin(self) -> None:
         require = os.environ.get("PR_COMPLETION_REQUIRE_RELEASE_TAG") == "1"
@@ -271,27 +365,18 @@ class PortalPackageValidationTests(unittest.TestCase):
             ):
                 self.skipTest(f"release tag unavailable locally: {error}")
             raise
-        meta = submission.validate_portal_package(members)
-        self.assertEqual(meta["version"], submission.RELEASE_VERSION)
         content_fp = submission.verify_content_pin(members)
         self.assertEqual(content_fp, submission.RELEASE_PLUGIN_CONTENT_SHA256)
         with tempfile.TemporaryDirectory(prefix="openai-tagged-") as temporary:
             out = Path(temporary) / "portal.zip"
+            portal_members = submission.select_portal_members(members)
             digest = submission.build_portal_plugin_zip(
                 out,
-                members,
-                enforce_content_pin=True,
+                portal_members,
+                archive_version=submission.RELEASE_VERSION,
+                enforce_content_pin=False,
             )
             self.assertEqual(len(digest), 64)
-            # Portable path must not require Ubuntu ZIP container bytes.
-            # Exact-byte integrity is a separate gate (verify_published_zip_bytes).
-            full = submission.package_submission(
-                ROOT,
-                Path(temporary) / "full",
-                probe_urls=False,
-                from_working_tree=False,
-            )
-            self.assertEqual(len(full["portal_sha256"]), 64)
             self.assertEqual(
                 submission.members_content_sha256(
                     submission.load_tagged_files(ROOT)
@@ -308,6 +393,16 @@ class ListingPinNegativeTests(unittest.TestCase):
         shutil.copytree(ROOT / "submission/openai", root)
         listing_path = root / "listing.json"
         listing = json.loads(listing_path.read_text(encoding="utf-8"))
+        listing["releaseURL"] = (
+            f"https://github.com/anur4ag/pr-completion/releases/tag/"
+            f"{submission.RELEASE_REF}"
+        )
+        listing["source"] = {
+            "version": submission.RELEASE_VERSION,
+            "tag": submission.RELEASE_REF,
+            "commit": submission.RELEASE_COMMIT,
+            "portalPluginSHA256": submission.RELEASE_PLUGIN_SHA256,
+        }
         listing["source"].update(source_overrides)
         listing_path.write_text(
             json.dumps(listing, indent=2) + "\n", encoding="utf-8"
@@ -319,7 +414,13 @@ class ListingPinNegativeTests(unittest.TestCase):
         root = self._materials_with_source(commit="")
         materials = submission.load_materials(root)
         with self.assertRaises(submission.SubmissionError) as ctx:
-            submission.validate_listing(root, materials)
+            submission.validate_listing(
+                root,
+                materials,
+                expected_version=submission.RELEASE_VERSION,
+                expected_ref=submission.RELEASE_REF,
+                enforce_published_pins=True,
+            )
         self.assertIn("source.commit", str(ctx.exception))
 
     def test_wrong_commit_rejected_when_release_commit_pinned(self) -> None:
@@ -327,7 +428,13 @@ class ListingPinNegativeTests(unittest.TestCase):
         root = self._materials_with_source(commit="0" * 40)
         materials = submission.load_materials(root)
         with self.assertRaises(submission.SubmissionError) as ctx:
-            submission.validate_listing(root, materials)
+            submission.validate_listing(
+                root,
+                materials,
+                expected_version=submission.RELEASE_VERSION,
+                expected_ref=submission.RELEASE_REF,
+                enforce_published_pins=True,
+            )
         self.assertIn("source.commit", str(ctx.exception))
 
     def test_wrong_portal_plugin_checksum_rejected(self) -> None:
@@ -335,7 +442,13 @@ class ListingPinNegativeTests(unittest.TestCase):
         root = self._materials_with_source(portalPluginSHA256="0" * 64)
         materials = submission.load_materials(root)
         with self.assertRaises(submission.SubmissionError) as ctx:
-            submission.validate_listing(root, materials)
+            submission.validate_listing(
+                root,
+                materials,
+                expected_version=submission.RELEASE_VERSION,
+                expected_ref=submission.RELEASE_REF,
+                enforce_published_pins=True,
+            )
         self.assertIn("portalPluginSHA256", str(ctx.exception))
 
 
@@ -379,6 +492,7 @@ class ImmutableTagDriftNegativeTests(unittest.TestCase):
                     submission.build_portal_plugin_zip(
                         out,
                         members,
+                        archive_version=submission.RELEASE_VERSION,
                         enforce_content_pin=True,
                     )
                 self.assertIn("content fingerprint", str(ctx.exception))
@@ -402,10 +516,20 @@ class ImmutableTagDriftNegativeTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory(prefix="openai-exact-byte-") as temporary:
             out = Path(temporary) / "portal.zip"
-            # Portable rebuild succeeds on content pin alone.
-            submission.build_portal_plugin_zip(
-                out, members, enforce_content_pin=True
+            # Reconstruct the historical full plugin artifact directly. The
+            # new portal-size guard intentionally rejects this old shape.
+            submission._write_zip(
+                out,
+                [
+                    (
+                        f"pr-completion-{submission.RELEASE_VERSION}/{relative}",
+                        mode,
+                        data,
+                    )
+                    for relative, (mode, data) in sorted(members.items())
+                ],
             )
+            submission.verify_content_pin(members)
             # Probe: only the published ZIP pin is poisoned.
             original_zip = submission.RELEASE_PLUGIN_SHA256
             submission.RELEASE_PLUGIN_SHA256 = "0" * 64

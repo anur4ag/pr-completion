@@ -7,7 +7,7 @@
 #   1. Verify tag == v$(VERSION) and working tree is clean
 #   2. Re-run the full local validation suite (no live install smoke here;
 #      three-OS CI must already be green on the tagged commit / main)
-#   3. Build deterministic plugin + skills-source ZIPs and SHA-256 checksums
+#   3. Build deterministic installable, skills-source, and portal ZIPs
 #   4. Create the GitHub Release and upload artifacts
 name: release
 
@@ -74,7 +74,17 @@ jobs:
         run: python -B scripts/run-ci-validation.py --skip-install-smoke
 
       - name: Build deterministic release packages
-        run: python -B scripts/package-release.py --out-dir release-out
+        run: |
+          set -euo pipefail
+          python -B scripts/package-release.py --out-dir release-out
+          python -B scripts/package-openai-submission.py \
+            --from-working-tree \
+            --out-dir portal-out
+          cp "portal-out/pr-completion-${VERSION}-portal-plugin.zip" release-out/
+          (
+            cd release-out
+            sha256sum ./*.zip | sed 's#  \./#  #' | sort -k2 > SHA256SUMS.txt
+          )
 
       - name: Show artifact checksums
         run: |
@@ -129,7 +139,8 @@ jobs:
             echo ""
             echo "- \`pr-completion-${VERSION}-plugin.zip\` - full installable plugin tree"
             echo "- \`pr-completion-${VERSION}-skills-source.zip\` - clean skills source archive"
-            echo "- \`SHA256SUMS.txt\` - SHA-256 digests for both ZIPs"
+            echo "- \`pr-completion-${VERSION}-portal-plugin.zip\` - minimal OpenAI skills-only portal upload"
+            echo "- \`SHA256SUMS.txt\` - SHA-256 digests for all ZIPs"
             echo ""
             echo "Docs: https://anur4ag.github.io/pr-completion/"
           } > "${NOTES}"
@@ -140,4 +151,5 @@ jobs:
             --verify-tag \
             "release-out/pr-completion-${VERSION}-plugin.zip" \
             "release-out/pr-completion-${VERSION}-skills-source.zip" \
+            "release-out/pr-completion-${VERSION}-portal-plugin.zip" \
             "release-out/SHA256SUMS.txt"
