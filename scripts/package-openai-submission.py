@@ -13,8 +13,10 @@ The authenticated upload artifact is therefore the public plugin package
 skills-tree-only ZIP and not a private overlay that differs from the tagged
 public release.
 
-Pins below are filled after the v0.1.1 tag and GitHub Release exist. Local
-reconstruction must match the published plugin ZIP checksum when pins are set.
+Pins below are filled after the v0.1.1 tag and GitHub Release exist.
+Immutable-tag reconstruction enforces the portable content fingerprint.
+Exact published ZIP bytes are verified only by the independent hosted
+release-integrity job (not by content equivalence alone).
 
 Usage:
   python3 -B scripts/package-openai-submission.py

@@ -9,13 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- OpenAI packager: published checksum enforcement applies only to immutable-tag reconstruction; `--from-working-tree` compares only against contemporaneous `package-release` output. Tag path accepts either the ubuntu ZIP pin or a platform-independent member content fingerprint (Windows zlib ZIP bytes may differ).
+- OpenAI packager integrity is two independent gates (not an either/or pin):
+  - Immutable-tag reconstruction enforces the portable member/content fingerprint (`RELEASE_PLUGIN_CONTENT_SHA256`) so local and multi-OS CI reconstruction does not depend on Ubuntu ZIP container bytes.
+  - Hosted `release-integrity` downloads the immutable published `v0.1.1` plugin ZIP and `SHA256SUMS.txt` and requires exact published ZIP bytes (`RELEASE_PLUGIN_SHA256`). Content fingerprint alone cannot satisfy that job.
+  - `--from-working-tree` compares only against contemporaneous `package-release` output (no published ZIP pin).
 - Listing `source.commit` must equal pinned `RELEASE_COMMIT` exactly when that pin is set (empty and wrong values fail).
 - Hosted CI fetches full history and tags so immutable `v0.1.1` reconstruction runs deterministically (no silent skip).
 
 ### Documentation
 
-- Recorded a one-time DCO exception for exactly two immutable ancestors (`a93a5d7`, `4af89ae`) on the `v0.1.1` history; future commits require `Signed-off-by`. No retag or history rewrite.
+- Recorded a one-time DCO exception for exactly two immutable ancestors (`a93a5d7`, `4af89ae`) on the `v0.1.1` history.
+- Future commits require `Signed-off-by` matching author or committer; the `signed-off-by` status check is required on `main` with no admin bypass. Land changes via signed pull requests. No retag or history rewrite.
 
 ## [0.1.1] - 2026-07-14
 
