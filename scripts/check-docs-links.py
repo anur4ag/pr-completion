@@ -36,6 +36,7 @@ class HrefParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
         self.hrefs: list[str] = []
+        self.canonical_hrefs: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attr_map = {key: value for key, value in attrs}
@@ -45,6 +46,9 @@ class HrefParser(HTMLParser):
             self.hrefs.append(attr_map["href"] or "")
         if tag in {"script", "img"} and attr_map.get("src"):
             self.hrefs.append(attr_map["src"] or "")
+        rel_tokens = set((attr_map.get("rel") or "").lower().split())
+        if tag == "link" and "canonical" in rel_tokens and attr_map.get("href"):
+            self.canonical_hrefs.append(attr_map["href"] or "")
 
 
 def plugin_root_from(start: Path) -> Path:
@@ -293,6 +297,18 @@ def check_built_site_internal(
         parser.feed(html_text)
         hrefs = set(parser.hrefs)
         hrefs.update(HREF_RE.findall(html_text))
+
+        expected_canonical = public_url(site, page_path)
+        if len(parser.canonical_hrefs) != 1:
+            findings.append(
+                f"{file_path.relative_to(root)}: expected exactly one canonical link, "
+                f"found {len(parser.canonical_hrefs)}"
+            )
+        elif parser.canonical_hrefs[0] != expected_canonical:
+            findings.append(
+                f"{file_path.relative_to(root)}: canonical "
+                f"{parser.canonical_hrefs[0]!r} does not match {expected_canonical!r}"
+            )
 
         for href in sorted(hrefs):
             if href.startswith("#") or is_skip_scheme(href) or is_http_external(href):
