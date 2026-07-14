@@ -285,22 +285,51 @@ def members_content_sha256(members: dict[str, tuple[int, bytes]]) -> str:
     return digest.hexdigest()
 
 
+def verify_content_pin(members: dict[str, tuple[int, bytes]]) -> str:
+    """Portable gate: logical package identity only (cross-platform safe)."""
+    if not RELEASE_PLUGIN_CONTENT_SHA256:
+        return members_content_sha256(members)
+    content_digest = members_content_sha256(members)
+    if content_digest != RELEASE_PLUGIN_CONTENT_SHA256:
+        raise SubmissionError(
+            "reconstructed portal plugin content fingerprint does not match "
+            f"published content pin: {content_digest} != {RELEASE_PLUGIN_CONTENT_SHA256}"
+        )
+    return content_digest
+
+
+def verify_published_zip_bytes(zip_path: Path) -> str:
+    """Independent exact-byte gate for the published plugin ZIP.
+
+    This path cannot pass via content fingerprint alone. A wrong
+    ``RELEASE_PLUGIN_SHA256`` always fails here even when member content is
+    correct. Use only for release-integrity (Ubuntu download / pin probe).
+    """
+    if not RELEASE_PLUGIN_SHA256:
+        raise SubmissionError(
+            "RELEASE_PLUGIN_SHA256 is not pinned; cannot verify exact published ZIP bytes"
+        )
+    digest = sha256_file(zip_path)
+    if digest != RELEASE_PLUGIN_SHA256:
+        raise SubmissionError(
+            "exact published ZIP pin mismatch (content equivalence is not a substitute): "
+            f"{digest} != {RELEASE_PLUGIN_SHA256}"
+        )
+    return digest
+
+
 def build_portal_plugin_zip(
     out_path: Path,
     members: dict[str, tuple[int, bytes]],
     *,
-    enforce_published_checksum: bool = True,
+    enforce_content_pin: bool = False,
 ) -> str:
     """Write the portal plugin ZIP.
 
-    ``enforce_published_checksum`` applies only to immutable-tag reconstruction
-    (the default packaging path). Working-tree builds compare against a
-    contemporaneous ``package-release`` output instead and must not demand the
-    tagged release pin when ``main`` has moved past the tag.
-
-    Published ZIP byte pin is preferred (matches ubuntu release artifacts).
-    If the local ZIP bytes differ (zlib/platform variance) but the logical
-    member fingerprint matches ``RELEASE_PLUGIN_CONTENT_SHA256``, accept.
+    Portable reconstruction (tag path on any OS) may set
+    ``enforce_content_pin=True`` so member identity is checked without
+    requiring Ubuntu ZIP container bytes. Exact published ZIP bytes are
+    enforced only via :func:`verify_published_zip_bytes` (separate gate).
     """
     ordered = sorted(members)
     zip_members = [
@@ -309,26 +338,9 @@ def build_portal_plugin_zip(
     ]
     _write_zip(out_path, zip_members)
     digest = sha256_file(out_path)
-    if not enforce_published_checksum:
-        return digest
-    if not RELEASE_PLUGIN_SHA256 and not RELEASE_PLUGIN_CONTENT_SHA256:
-        return digest
-
-    content_digest = members_content_sha256(members)
-    zip_ok = bool(RELEASE_PLUGIN_SHA256) and digest == RELEASE_PLUGIN_SHA256
-    content_ok = (
-        bool(RELEASE_PLUGIN_CONTENT_SHA256)
-        and content_digest == RELEASE_PLUGIN_CONTENT_SHA256
-    )
-    if zip_ok or content_ok:
-        return digest
-
-    out_path.unlink(missing_ok=True)
-    raise SubmissionError(
-        "reconstructed portal plugin does not match published pins: "
-        f"zip={digest} (want {RELEASE_PLUGIN_SHA256 or 'unset'}), "
-        f"content={content_digest} (want {RELEASE_PLUGIN_CONTENT_SHA256 or 'unset'})"
-    )
+    if enforce_content_pin:
+        verify_content_pin(members)
+    return digest
 
 
 def validate_png_bytes(data: bytes, *, label: str) -> dict[str, int]:
@@ -769,12 +781,12 @@ def package_submission(
     out_dir.mkdir(parents=True, exist_ok=True)
     portal_zip = out_dir / f"pr-completion-{RELEASE_VERSION}-portal-plugin.zip"
     materials_zip = out_dir / f"pr-completion-{RELEASE_VERSION}-openai-materials.zip"
-    # Immutable tag path: enforce published plugin checksum.
-    # Working-tree path: only contemporaneous package-release identity.
+    # Tag path: portable content pin only (exact ZIP bytes are a separate
+    # Ubuntu release-integrity gate). Working tree: package-release identity.
     portal_digest = build_portal_plugin_zip(
         portal_zip,
         members,
-        enforce_published_checksum=not from_working_tree,
+        enforce_content_pin=not from_working_tree,
     )
     layout = inspect_portal_zip_layout(portal_zip)
     materials_digest = build_materials_archive(materials_zip, materials)

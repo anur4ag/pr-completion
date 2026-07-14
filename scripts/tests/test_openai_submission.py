@@ -236,23 +236,24 @@ class PortalPackageValidationTests(unittest.TestCase):
                 any(name.endswith("assets/traycer-icon.png") for name in names)
             )
 
-    def test_working_tree_build_skips_published_checksum_enforcement(self) -> None:
-        """Direct unit guard: enforce_published_checksum=False ignores pin."""
+    def test_working_tree_build_skips_content_pin_enforcement(self) -> None:
+        """Working-tree path does not enforce published content pin."""
         members = self._base_members()
-        # Deliberately incomplete members produce a digest != published pin.
         with tempfile.TemporaryDirectory(prefix="openai-no-pin-") as temporary:
             out = Path(temporary) / "portal.zip"
             digest = submission.build_portal_plugin_zip(
                 out,
                 members,
-                enforce_published_checksum=False,
+                enforce_content_pin=False,
             )
             self.assertEqual(len(digest), 64)
-            if submission.RELEASE_PLUGIN_SHA256:
-                # Minimal member set cannot match the full published release pin.
-                self.assertNotEqual(digest, submission.RELEASE_PLUGIN_SHA256)
+            # Incomplete members must not match the published content pin.
+            self.assertNotEqual(
+                submission.members_content_sha256(members),
+                submission.RELEASE_PLUGIN_CONTENT_SHA256,
+            )
 
-    def test_immutable_tag_reconstruction_enforces_published_checksum(self) -> None:
+    def test_immutable_tag_reconstruction_enforces_content_pin(self) -> None:
         require = os.environ.get("PR_COMPLETION_REQUIRE_RELEASE_TAG") == "1"
         try:
             members = submission.load_tagged_files(ROOT)
@@ -272,25 +273,18 @@ class PortalPackageValidationTests(unittest.TestCase):
             raise
         meta = submission.validate_portal_package(members)
         self.assertEqual(meta["version"], submission.RELEASE_VERSION)
-        content_fp = submission.members_content_sha256(members)
+        content_fp = submission.verify_content_pin(members)
         self.assertEqual(content_fp, submission.RELEASE_PLUGIN_CONTENT_SHA256)
         with tempfile.TemporaryDirectory(prefix="openai-tagged-") as temporary:
             out = Path(temporary) / "portal.zip"
             digest = submission.build_portal_plugin_zip(
                 out,
                 members,
-                enforce_published_checksum=True,
+                enforce_content_pin=True,
             )
             self.assertEqual(len(digest), 64)
-            self.assertTrue(submission.RELEASE_PLUGIN_SHA256)
-            # ZIP bytes match the ubuntu-published pin when zlib agrees; always
-            # require the platform-independent content pin.
-            if digest != submission.RELEASE_PLUGIN_SHA256:
-                self.assertEqual(
-                    submission.members_content_sha256(members),
-                    submission.RELEASE_PLUGIN_CONTENT_SHA256,
-                )
-            # Full package_submission default path (tag) also succeeds.
+            # Portable path must not require Ubuntu ZIP container bytes.
+            # Exact-byte integrity is a separate gate (verify_published_zip_bytes).
             full = submission.package_submission(
                 ROOT,
                 Path(temporary) / "full",
@@ -368,7 +362,7 @@ class ImmutableTagDriftNegativeTests(unittest.TestCase):
         finally:
             submission.RELEASE_COMMIT = original
 
-    def test_published_checksum_mismatch_is_rejected_on_tag_path(self) -> None:
+    def test_content_pin_mismatch_is_rejected_on_tag_path(self) -> None:
         members = {
             "VERSION": (0o644, b"0.1.1\n"),
             ".codex-plugin/plugin.json": (
@@ -376,24 +370,118 @@ class ImmutableTagDriftNegativeTests(unittest.TestCase):
                 b'{"name":"pr-completion","version":"0.1.1"}\n',
             ),
         }
-        original_zip = submission.RELEASE_PLUGIN_SHA256
         original_content = submission.RELEASE_PLUGIN_CONTENT_SHA256
-        submission.RELEASE_PLUGIN_SHA256 = "a" * 64
         submission.RELEASE_PLUGIN_CONTENT_SHA256 = "b" * 64
         try:
-            with tempfile.TemporaryDirectory(prefix="openai-checksum-neg-") as temporary:
+            with tempfile.TemporaryDirectory(prefix="openai-content-neg-") as temporary:
                 out = Path(temporary) / "portal.zip"
                 with self.assertRaises(submission.SubmissionError) as ctx:
                     submission.build_portal_plugin_zip(
                         out,
                         members,
-                        enforce_published_checksum=True,
+                        enforce_content_pin=True,
                     )
-                message = str(ctx.exception)
-                self.assertIn("does not match published pins", message)
+                self.assertIn("content fingerprint", str(ctx.exception))
         finally:
-            submission.RELEASE_PLUGIN_SHA256 = original_zip
             submission.RELEASE_PLUGIN_CONTENT_SHA256 = original_content
+
+    def test_exact_byte_gate_fails_when_only_zip_pin_is_wrong(self) -> None:
+        """Wrong RELEASE_PLUGIN_SHA256 cannot pass via correct content pin."""
+        require = os.environ.get("PR_COMPLETION_REQUIRE_RELEASE_TAG") == "1"
+        try:
+            members = submission.load_tagged_files(ROOT)
+        except submission.SubmissionError as error:
+            if require:
+                self.fail(f"tag required: {error}")
+            self.skipTest(f"tag unavailable: {error}")
+
+        # Content pin remains correct.
+        self.assertEqual(
+            submission.members_content_sha256(members),
+            submission.RELEASE_PLUGIN_CONTENT_SHA256,
+        )
+        with tempfile.TemporaryDirectory(prefix="openai-exact-byte-") as temporary:
+            out = Path(temporary) / "portal.zip"
+            # Portable rebuild succeeds on content pin alone.
+            submission.build_portal_plugin_zip(
+                out, members, enforce_content_pin=True
+            )
+            # Probe: only the published ZIP pin is poisoned.
+            original_zip = submission.RELEASE_PLUGIN_SHA256
+            submission.RELEASE_PLUGIN_SHA256 = "0" * 64
+            try:
+                with self.assertRaises(submission.SubmissionError) as ctx:
+                    # Even a file whose content matches the real release cannot
+                    # satisfy the exact-byte gate under a wrong pin constant.
+                    submission.verify_published_zip_bytes(out)
+                message = str(ctx.exception)
+                self.assertIn("exact published ZIP pin mismatch", message)
+                self.assertIn(
+                    "content equivalence is not a substitute", message
+                )
+            finally:
+                submission.RELEASE_PLUGIN_SHA256 = original_zip
+
+            # Restoring the real pin: only a file that actually has the
+            # published bytes succeeds (local rebuild may differ on Windows).
+            # Use content pin still OK independently.
+            submission.verify_content_pin(members)
+
+
+class DCOIdentityTests(unittest.TestCase):
+    def setUp(self) -> None:
+        sys.dont_write_bytecode = True
+        os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+        path = ROOT / "scripts/check-dco.py"
+        spec = importlib.util.spec_from_file_location("pr_completion_check_dco", path)
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f"could not load {path}")
+        self.dco = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = self.dco
+        spec.loader.exec_module(self.dco)
+
+    def test_exception_list_is_exactly_two_approved_shas(self) -> None:
+        self.assertTrue(self.dco.exception_list_is_exact())
+        self.assertEqual(len(self.dco.DCO_EXCEPTION_SHAS), 2)
+        self.assertIn(
+            "a93a5d77f51a713f86578255271d59bf96a8e991",
+            self.dco.DCO_EXCEPTION_SHAS,
+        )
+        self.assertIn(
+            "4af89ae8e5648c4a6846773817aa9856c5f979a4",
+            self.dco.DCO_EXCEPTION_SHAS,
+        )
+
+    def test_unrelated_signatory_is_rejected(self) -> None:
+        message = (
+            "example commit\n\n"
+            "Signed-off-by: Unrelated Person <unrelated@example.com>\n"
+        )
+        signoffs = self.dco.parse_signoffs(message)
+        self.assertEqual(len(signoffs), 1)
+        author = self.dco.Identity(name="Anurag Sharma", email="anurag@traycer.ai")
+        committer = author
+        self.assertFalse(any(s.matches(author) or s.matches(committer) for s in signoffs))
+
+    def test_matching_author_signoff_is_accepted(self) -> None:
+        message = (
+            "example commit\n\n"
+            "Signed-off-by: Anurag Sharma <anurag@traycer.ai>\n"
+        )
+        signoffs = self.dco.parse_signoffs(message)
+        author = self.dco.Identity(name="Anurag Sharma", email="anurag@traycer.ai")
+        self.assertTrue(signoffs[0].matches(author))
+
+    def test_historical_exception_commits_are_skipped(self) -> None:
+        for sha in self.dco.DCO_EXCEPTION_SHAS:
+            # Full SHAs must be present in this clone of the public history.
+            try:
+                result = self.dco.validate_commit(ROOT, sha)
+            except self.dco.DCOError as error:
+                if "failed" in str(error).lower() or "unknown" in str(error).lower():
+                    self.skipTest(f"exception sha unavailable: {error}")
+                raise
+            self.assertIn("historical DCO exception", result)
 
 
 if __name__ == "__main__":
