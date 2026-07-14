@@ -1,5 +1,6 @@
-# Independent exact-byte integrity gate for the immutable published v0.1.1
-# plugin ZIP. This job cannot pass via content-fingerprint equivalence alone.
+# Independent exact-byte integrity gates for the immutable published installable
+# and portal ZIPs. v0.1.1 has an explicit legacy alias because its portal upload
+# reused the full plugin ZIP; newer releases must publish two distinct assets.
 name: release-integrity
 
 on:
@@ -32,18 +33,56 @@ jobs:
         with:
           python-version: "3.10"
 
-      - name: Download immutable v0.1.1 release assets
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Resolve pinned release identity
+        id: release
+        shell: bash
         run: |
           set -euo pipefail
-          mkdir -p /tmp/v011-assets
-          gh release download v0.1.1 \
+          python - <<'PY' >> "${GITHUB_OUTPUT}"
+          import importlib.util
+          from pathlib import Path
+
+          script = Path("scripts/package-openai-submission.py")
+          spec = importlib.util.spec_from_file_location("portal_pkg", script)
+          mod = importlib.util.module_from_spec(spec)
+          assert spec.loader is not None
+          spec.loader.exec_module(mod)
+          print(f"version={mod.RELEASE_VERSION}")
+          print(f"ref={mod.RELEASE_REF}")
+          PY
+
+      - name: Download immutable release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_REF: ${{ steps.release.outputs.ref }}
+        run: |
+          set -euo pipefail
+          ASSET_DIR=/tmp/pr-completion-release-assets
+          mkdir -p "${ASSET_DIR}"
+          INSTALLABLE="pr-completion-${RELEASE_VERSION}-plugin.zip"
+          PORTAL="pr-completion-${RELEASE_VERSION}-portal-plugin.zip"
+          gh release download "${RELEASE_REF}" \
             --repo "${{ github.repository }}" \
-            --dir /tmp/v011-assets \
-            --pattern 'pr-completion-0.1.1-plugin.zip' \
+            --dir "${ASSET_DIR}" \
+            --pattern "${INSTALLABLE}" \
             --pattern 'SHA256SUMS.txt'
-          ls -la /tmp/v011-assets
+          if gh release view "${RELEASE_REF}" \
+            --repo "${{ github.repository }}" \
+            --json assets \
+            --jq '.assets[].name' | grep -Fxq "${PORTAL}"; then
+            gh release download "${RELEASE_REF}" \
+              --repo "${{ github.repository }}" \
+              --dir "${ASSET_DIR}" \
+              --pattern "${PORTAL}"
+          elif [[ "${RELEASE_VERSION}" == "0.1.1" ]]; then
+            # Historical v0.1.1 used the full plugin artifact for portal upload.
+            cp "${ASSET_DIR}/${INSTALLABLE}" "${ASSET_DIR}/${PORTAL}"
+          else
+            echo "missing required distinct portal asset ${PORTAL}" >&2
+            exit 1
+          fi
+          ls -la "${ASSET_DIR}"
 
       - name: Exact-byte integrity against independent release pins
         run: |
@@ -65,24 +104,39 @@ jobs:
           assert expected_installable and len(expected_installable) == 64
           assert expected_portal and len(expected_portal) == 64
 
-          sums = Path("/tmp/v011-assets/SHA256SUMS.txt").read_text(encoding="utf-8")
-          match = re.search(
-              r"^([0-9a-f]{64})\s+pr-completion-0\.1\.1-plugin\.zip\s*$",
-              sums,
-              re.MULTILINE,
+          asset_dir = Path("/tmp/pr-completion-release-assets")
+          installable_name = f"pr-completion-{mod.RELEASE_VERSION}-plugin.zip"
+          portal_name = f"pr-completion-{mod.RELEASE_VERSION}-portal-plugin.zip"
+          sums = (asset_dir / "SHA256SUMS.txt").read_text(encoding="utf-8")
+
+          def checksum_for(name: str) -> str | None:
+              match = re.search(
+                  rf"^([0-9a-f]{{64}})\s+{re.escape(name)}\s*$",
+                  sums,
+                  re.MULTILINE,
+              )
+              return match.group(1) if match else None
+
+          installable_sum = checksum_for(installable_name)
+          assert installable_sum == expected_installable, (
+              f"SHA256SUMS installable digest {installable_sum} != {expected_installable}"
           )
-          assert match, "SHA256SUMS.txt missing plugin.zip line"
-          assert match.group(1) == expected_installable, (
-              f"SHA256SUMS plugin digest {match.group(1)} != pin {expected_installable}"
+          portal_sum = checksum_for(portal_name)
+          if mod.RELEASE_VERSION == "0.1.1":
+              # Legacy release had no separately named portal asset/checksum.
+              assert expected_portal == expected_installable
+              portal_sum = installable_sum
+          assert portal_sum == expected_portal, (
+              f"SHA256SUMS portal digest {portal_sum} != {expected_portal}"
           )
 
-          zip_path = Path("/tmp/v011-assets/pr-completion-0.1.1-plugin.zip")
-          # Independent exact-byte gate: content pin alone cannot satisfy this.
-          installable_digest = mod.verify_published_installable_zip_bytes(zip_path)
+          installable_zip_path = asset_dir / installable_name
+          portal_zip_path = asset_dir / portal_name
+          installable_digest = mod.verify_published_installable_zip_bytes(
+              installable_zip_path
+          )
           assert installable_digest == expected_installable
-          # v0.1.1 used the full plugin ZIP as its portal upload. The pins are
-          # deliberately separate so v0.1.2 can verify two distinct assets.
-          portal_digest = mod.verify_published_portal_zip_bytes(zip_path)
+          portal_digest = mod.verify_published_portal_zip_bytes(portal_zip_path)
           assert portal_digest == expected_portal
           print(f"installable exact-byte OK: {installable_digest}")
           print(f"portal exact-byte OK: {portal_digest}")

@@ -342,6 +342,10 @@ class PortalPackageValidationTests(unittest.TestCase):
         self.assertIn("RELEASE_PORTAL_SHA256", workflow)
         self.assertIn("verify_published_installable_zip_bytes", workflow)
         self.assertIn("verify_published_portal_zip_bytes", workflow)
+        self.assertIn('installable_zip_path = asset_dir / installable_name', workflow)
+        self.assertIn('portal_zip_path = asset_dir / portal_name', workflow)
+        self.assertIn('verify_published_portal_zip_bytes(portal_zip_path)', workflow)
+        self.assertIn('missing required distinct portal asset', workflow)
 
     def test_default_cli_builds_current_minimal_portal_zip(self) -> None:
         with tempfile.TemporaryDirectory(prefix="openai-default-cli-") as temporary:
