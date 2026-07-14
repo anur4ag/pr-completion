@@ -1,21 +1,29 @@
-# OpenAI skills-only submission materials
+# OpenAI directory submission materials (v0.1.1)
 
-This directory is the reproducible source for the PR Completion `v0.1.0` OpenAI plugin-directory draft. It follows the current official [Submit plugins](https://learn.chatgpt.com/docs/submit-plugins) workflow.
+This directory holds form inputs and validation fixtures for the PR Completion OpenAI plugin-directory draft under the verified **Business — Traycer** identity. It follows the official [Submit plugins](https://learn.chatgpt.com/docs/submit-plugins) workflow.
+
+## Portal rejection lessons (v0.1.0)
+
+1. A skills-tree-only ZIP was rejected because it lacked a supported plugin manifest (`.codex-plugin/plugin.json`, `.agent-plugin/plugin.json`, or `.claude-plugin/plugin.json`) at the ZIP root or inside the sole top-level directory.
+2. A full plugin ZIP without `interface.composerIcon` and `interface.logo` was rejected; both must reference a square image inside the package.
+3. The portal identity dropdown for this account exposes **Business — Traycer** only.
 
 ## Build and validate
 
-From a clone that contains the public `v0.1.0` tag:
+From a clean checkout (working tree before tag, or after `v0.1.1` exists):
 
 ```bash
+# Pre-tag / local portal ZIP from the current tree (must match package-release bytes)
+python3 -B scripts/package-openai-submission.py --from-working-tree
+
+# After the public tag exists
 python3 -B scripts/package-openai-submission.py --check-urls
 ```
 
-The command refuses any tag/commit drift, any change to the exact tagged skill allowlist, any mismatch from the published skills-source checksum, any extra local submission file, and common credential, personal-path, cache, local-only, or cachebuster contamination. It extracts blobs directly from the tagged Git object database; working-tree skill edits cannot enter the upload.
-
 Outputs under ignored `submission-out/`:
 
-- `pr-completion-0.1.0-openai-skills.zip` — upload this on the portal **Skills** tab. Its bytes and checksum match the published `v0.1.0` skills-source archive.
-- `pr-completion-0.1.0-openai-materials.zip` — auditable copy of the form inputs and test fixture; do not upload this as the skill bundle.
+- `pr-completion-0.1.1-portal-plugin.zip` — **upload this** on the portal Skills tab. It contains the public release manifest, skills, and square visual assets under one top-level plugin directory. When pins are set it matches the published `pr-completion-0.1.1-plugin.zip` checksum.
+- `pr-completion-0.1.1-openai-materials.zip` — auditable copy of form inputs and fixtures; do not upload this as the skill bundle.
 - `SHA256SUMS.txt` and `validation-report.json` — integrity and validation evidence.
 
 ## Portal mapping
@@ -23,11 +31,12 @@ Outputs under ignored `submission-out/`:
 | Portal tab | Local source |
 |---|---|
 | Create plugin | Choose **Skills only** |
+| Developer identity | **Business — Traycer** |
 | Info | `listing.json`, `assets/logo.png` |
-| Skills | Generated `pr-completion-0.1.0-openai-skills.zip` |
+| Skills | Generated `pr-completion-0.1.1-portal-plugin.zip` |
 | Prompts | `starter-prompts.json` |
 | Testing | `test-cases.json` (five positive, three negative) |
 | Global | `availability.md` |
 | Submit | `release-notes.md`, then complete accurate attestations |
 
-`portal-checklist.md` separates locally proven facts from organization/account facts that must be observed in an already-authenticated portal session.
+`portal-checklist.md` separates locally proven facts from organization/account steps that remain user-controlled in the authenticated portal.

@@ -358,7 +358,7 @@ class StagingInstallIsolationTests(unittest.TestCase):
 
     def test_isolated_install_uses_cachebusted_staging_not_source(self) -> None:
         source_before = _json(ROOT / ".codex-plugin" / "plugin.json")["version"]
-        self.assertEqual(source_before, "0.1.0")
+        self.assertEqual(source_before, "0.1.1")
         source_bytes_before = _read(ROOT / ".codex-plugin" / "plugin.json")
 
         completed = subprocess.run(
@@ -388,8 +388,8 @@ class StagingInstallIsolationTests(unittest.TestCase):
             msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
         )
         payload = json.loads(completed.stdout)
-        self.assertEqual(payload["sourceVersion"], "0.1.0")
-        self.assertEqual(payload["stagedVersion"], "0.1.0+codex.e2e-isolated")
+        self.assertEqual(payload["sourceVersion"], "0.1.1")
+        self.assertEqual(payload["stagedVersion"], "0.1.1+codex.e2e-isolated")
         self.assertTrue(payload["sourceUnchanged"])
         self.assertTrue(payload["installed"])
         self.assertTrue(payload["install"]["isolated"])
@@ -400,7 +400,7 @@ class StagingInstallIsolationTests(unittest.TestCase):
         staged_manifest = (
             Path(payload["stagedPluginRoot"]) / ".codex-plugin" / "plugin.json"
         )
-        self.assertEqual(_json(staged_manifest)["version"], "0.1.0+codex.e2e-isolated")
+        self.assertEqual(_json(staged_manifest)["version"], "0.1.1+codex.e2e-isolated")
 
         marketplace_manifest = Path(payload["marketplaceManifest"])
         self.assertEqual(
@@ -418,7 +418,7 @@ class StagingInstallIsolationTests(unittest.TestCase):
                 install_json = command["json"]
         self.assertIsNotNone(install_json)
         assert install_json is not None
-        self.assertEqual(install_json["version"], "0.1.0+codex.e2e-isolated")
+        self.assertEqual(install_json["version"], "0.1.1+codex.e2e-isolated")
         installed_path = Path(install_json["installedPath"])
         self.assertTrue(installed_path.is_dir())
         # Isolated install must land under the disposable codex home.
@@ -429,7 +429,7 @@ class StagingInstallIsolationTests(unittest.TestCase):
         installed_version = _json(
             installed_path / ".codex-plugin" / "plugin.json"
         )["version"]
-        self.assertEqual(installed_version, "0.1.0+codex.e2e-isolated")
+        self.assertEqual(installed_version, "0.1.1+codex.e2e-isolated")
 
 
 class LivePackageValidators(unittest.TestCase):
@@ -467,8 +467,8 @@ class LivePackageValidators(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 0, msg=completed.stderr)
         payload = json.loads(completed.stdout)
-        self.assertEqual(payload["sourceVersion"], "0.1.0")
-        self.assertEqual(payload["stagedVersion"], "0.1.0+codex.no-install")
+        self.assertEqual(payload["sourceVersion"], "0.1.1")
+        self.assertEqual(payload["stagedVersion"], "0.1.1+codex.no-install")
         self.assertFalse(payload["installed"])
         self.assertEqual(_read(ROOT / ".codex-plugin" / "plugin.json"), source_before)
         # Cleanup temp marketplace created without --keep-dir.

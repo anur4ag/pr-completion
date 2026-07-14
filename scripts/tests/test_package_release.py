@@ -71,6 +71,7 @@ class PackageReleaseDeterminismTests(unittest.TestCase):
             "SECURITY.md",
             ".claude-plugin",
             ".codex-plugin",
+            "assets",
             "skills",
             "scripts",
             "docs",
@@ -83,7 +84,7 @@ class PackageReleaseDeterminismTests(unittest.TestCase):
             else:
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, dest)
-        (root / "VERSION").write_text("0.1.0\n", encoding="utf-8")
+        self.version = (root / "VERSION").read_text(encoding="utf-8").strip()
 
     def test_cli_builds_expected_artifacts(self) -> None:
         out_dir = self.base / "out-a"
@@ -102,8 +103,8 @@ class PackageReleaseDeterminismTests(unittest.TestCase):
             env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
         )
         self.assertEqual(completed.returncode, 0, msg=completed.stderr)
-        plugin = out_dir / "pr-completion-0.1.0-plugin.zip"
-        skills = out_dir / "pr-completion-0.1.0-skills-source.zip"
+        plugin = out_dir / f"pr-completion-{self.version}-plugin.zip"
+        skills = out_dir / f"pr-completion-{self.version}-skills-source.zip"
         checksums = out_dir / "SHA256SUMS.txt"
         self.assertTrue(plugin.is_file())
         self.assertTrue(skills.is_file())
@@ -119,10 +120,10 @@ class PackageReleaseDeterminismTests(unittest.TestCase):
         out_b = self.base / "det-b"
         for out_dir in (out_a, out_b):
             result = package_mod.package_release(self.source, out_dir)
-            self.assertEqual(result["version"], "0.1.0")
+            self.assertEqual(result["version"], self.version)
         for name in (
-            "pr-completion-0.1.0-plugin.zip",
-            "pr-completion-0.1.0-skills-source.zip",
+            f"pr-completion-{self.version}-plugin.zip",
+            f"pr-completion-{self.version}-skills-source.zip",
             "SHA256SUMS.txt",
         ):
             a = (out_a / name).read_bytes()
@@ -132,15 +133,16 @@ class PackageReleaseDeterminismTests(unittest.TestCase):
     def test_plugin_zip_contains_manifests_and_four_skills(self) -> None:
         out_dir = self.base / "contents"
         package_mod.package_release(self.source, out_dir)
-        plugin = out_dir / "pr-completion-0.1.0-plugin.zip"
+        plugin = out_dir / f"pr-completion-{self.version}-plugin.zip"
         with zipfile.ZipFile(plugin) as archive:
             names = set(archive.namelist())
-        prefix = "pr-completion-0.1.0/"
+        prefix = f"pr-completion-{self.version}/"
         for relative in (
             "VERSION",
             ".claude-plugin/plugin.json",
             ".claude-plugin/marketplace.json",
             ".codex-plugin/plugin.json",
+            "assets/traycer-icon.png",
             "skills/take-pr-to-completion/SKILL.md",
             "skills/commit-workspace-changes/SKILL.md",
             "skills/gh-review-comment-triage/SKILL.md",
@@ -153,13 +155,13 @@ class PackageReleaseDeterminismTests(unittest.TestCase):
     def test_skills_zip_is_skills_tree_only(self) -> None:
         out_dir = self.base / "skills-only"
         package_mod.package_release(self.source, out_dir)
-        skills = out_dir / "pr-completion-0.1.0-skills-source.zip"
+        skills = out_dir / f"pr-completion-{self.version}-skills-source.zip"
         with zipfile.ZipFile(skills) as archive:
             names = archive.namelist()
         self.assertTrue(names)
         for name in names:
             self.assertTrue(
-                name.startswith("pr-completion-0.1.0-skills/skills/"),
+                name.startswith(f"pr-completion-{self.version}-skills/skills/"),
                 msg=name,
             )
         # Must not include top-level manifests outside skills/.

@@ -55,14 +55,14 @@ Scopes: `user` (default in examples), `project`, or `local`. Prefer `user` for p
 Pin the marketplace source to a git ref, then install:
 
 ```bash
-claude plugin marketplace add anur4ag/pr-completion@v0.1.0
+claude plugin marketplace add anur4ag/pr-completion@v0.1.1
 claude plugin install pr-completion@pr-completion --scope user
 ```
 
 Equivalent git-URL form:
 
 ```bash
-claude plugin marketplace add https://github.com/anur4ag/pr-completion.git#v0.1.0
+claude plugin marketplace add https://github.com/anur4ag/pr-completion.git#v0.1.1
 claude plugin install pr-completion@pr-completion --scope user
 ```
 
@@ -112,14 +112,14 @@ codex plugin add pr-completion@pr-completion
 ### Pin to a release tag
 
 ```bash
-codex plugin marketplace add anur4ag/pr-completion@v0.1.0
+codex plugin marketplace add anur4ag/pr-completion@v0.1.1
 codex plugin add pr-completion@pr-completion
 ```
 
 Or pass the ref explicitly:
 
 ```bash
-codex plugin marketplace add anur4ag/pr-completion --ref v0.1.0
+codex plugin marketplace add anur4ag/pr-completion --ref v0.1.1
 codex plugin add pr-completion@pr-completion
 ```
 

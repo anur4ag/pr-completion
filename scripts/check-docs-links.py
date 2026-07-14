@@ -47,6 +47,8 @@ DEFAULT_PLANNED_NOT_LIVE_URLS = frozenset(
         "https://github.com/anur4ag/pr-completion/blob/main/LICENSE",
         "https://github.com/anur4ag/pr-completion/releases/tag/v0.1.0",
         "https://github.com/anur4ag/pr-completion/compare/v0.1.0...HEAD",
+        "https://github.com/anur4ag/pr-completion/releases/tag/v0.1.1",
+        "https://github.com/anur4ag/pr-completion/compare/v0.1.1...HEAD",
     }
 )
 

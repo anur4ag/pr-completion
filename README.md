@@ -4,9 +4,9 @@ Autonomous pull request preparation for [Claude Code](https://code.claude.com/) 
 
 Validate and commit local work, then drive a GitHub PR through CI, review triage, and conflict resolution until the current head is **verified merge-ready**. The public workflow never merges, enables auto-merge, joins a merge queue, force-pushes, or bypasses branch protections.
 
-> **Status.** Public dual-harness plugin at [`anur4ag/pr-completion`](https://github.com/anur4ag/pr-completion) (`VERSION` `0.1.0`).
+> **Status.** Public dual-harness plugin at [`anur4ag/pr-completion`](https://github.com/anur4ag/pr-completion) (`VERSION` `0.1.1`).
 > Docs: [https://anur4ag.github.io/pr-completion/](https://anur4ag.github.io/pr-completion/).
-> OpenAI directory submission is a separate follow-up and is not claimed here.
+> Directory publisher identity: **Business — Traycer**. OpenAI portal upload remains a user-controlled step and is not claimed submitted or approved here.
 
 ## Skills
 
@@ -53,7 +53,7 @@ claude plugin install pr-completion@pr-completion --scope user
 Pin the marketplace to a release tag, then install:
 
 ```bash
-claude plugin marketplace add anur4ag/pr-completion@v0.1.0
+claude plugin marketplace add anur4ag/pr-completion@v0.1.1
 claude plugin install pr-completion@pr-completion --scope user
 ```
 
@@ -82,8 +82,8 @@ codex plugin add pr-completion@pr-completion
 Pin the marketplace to a release tag:
 
 ```bash
-codex plugin marketplace add anur4ag/pr-completion@v0.1.0
-# or: codex plugin marketplace add anur4ag/pr-completion --ref v0.1.0
+codex plugin marketplace add anur4ag/pr-completion@v0.1.1
+# or: codex plugin marketplace add anur4ag/pr-completion --ref v0.1.1
 codex plugin add pr-completion@pr-completion
 ```
 
@@ -162,10 +162,10 @@ python3 scripts/check-docs-links.py
 
 ## Publisher
 
-- Name: Anurag Sharma
-- GitHub: [anur4ag](https://github.com/anur4ag)
-- Canonical repository (planned public source): `https://github.com/anur4ag/pr-completion`
-- Individual publisher verification for marketplace/directory surfaces is a separate external step and is not claimed complete here.
+- Marketplace / directory publisher identity: **Traycer** (portal label **Business — Traycer**)
+- Canonical GitHub repository owner: [anur4ag](https://github.com/anur4ag)
+- Repository: `https://github.com/anur4ag/pr-completion`
+- Copyright remains as stated in [`LICENSE`](LICENSE). Repository ownership and copyright attribution are separate from the verified business portal identity used for directory submission.
 
 ## Version
 

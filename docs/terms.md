@@ -43,11 +43,12 @@ The publisher of pr-completion does not operate GitHub.
 
 ## Publisher
 
-- Individual publisher name: **Anurag Sharma**
-- GitHub profile: [https://github.com/anur4ag](https://github.com/anur4ag)
+- Marketplace / directory publisher identity: **Traycer** (portal label **Business — Traycer**)
+- GitHub repository owner profile: [https://github.com/anur4ag](https://github.com/anur4ag)
 - Canonical project repository: [https://github.com/anur4ag/pr-completion](https://github.com/anur4ag/pr-completion)
+- Copyright holders are listed in the MIT `LICENSE` file shipped with the software.
 
-Marketplace or directory “verified individual” badges, when shown by a third-party platform, are controlled by that platform's verification process and are not automatically conferred by these terms.
+Marketplace or directory verification badges, when shown by a third-party platform, are controlled by that platform's verification process and are not automatically conferred by these terms.
 
 ## No warranty and limitation of liability
 

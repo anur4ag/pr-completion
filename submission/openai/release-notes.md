@@ -1,11 +1,18 @@
-# PR Completion v0.1.0
+# PR Completion v0.1.1
 
-Initial public skills-only submission.
+Portal-ready patch under the verified **Business — Traycer** publisher identity.
 
-PR Completion provides four coordinated local workflows for repository-aware commits, deterministic pull-request observation, review-thread triage, and conflict resolution. The orchestrator may make ordinary in-scope edits, commits, pushes, CI repairs, and authorized thread replies while it drives a pull request to verified merge readiness.
+## Changes
 
-The safety boundary is strict: the plugin never merges, enables or disables auto-merge, joins a merge queue, bypasses protections, force-pushes, or rewrites history. An externally enabled auto-merge or externally merged pull request is observed and reported only.
+- Ship the canonical 1024×1024 Traycer square icon as a public plugin asset.
+- Add required Codex portal visual fields `interface.composerIcon` and `interface.logo` with plugin-root-relative `./assets/traycer-icon.png` paths.
+- Align public manifests and publisher-facing listing materials with Traycer while keeping GitHub repository ownership (`anur4ag/pr-completion`) and MIT copyright attribution accurate.
+- Fix the OpenAI portal upload package so the Skills-tab ZIP contains the public release manifest, skills, and referenced square assets under one top-level plugin directory (not a skills-tree-only archive and not a private overlay).
 
-Reviewers can run all eight supplied cases without private repositories. The portal skill upload is reconstructed from public tag `v0.1.0` at commit `e56ef4e79f44e295cb17dc66b3b03f622c780f09` and must retain SHA-256 `1cc653d0b5b9879109c31105c98a3d211f484ad409f6b23c6336f255e525536e`.
+## Safety (unchanged)
 
-No demo account, MCP server, app ID, domain challenge, hosted credential service, or plugin-operated telemetry is required. Live GitHub workflows use the reviewer's existing authenticated `gh` session and repository permissions.
+The safety boundary remains strict: the plugin never merges, enables or disables auto-merge, joins a merge queue, bypasses protections, force-pushes, or rewrites history. Terminal success is verified merge readiness only.
+
+## Upload artifact
+
+Use the generated portal plugin ZIP (byte-identical to the public `pr-completion-0.1.1-plugin.zip` release asset). Do not upload a skills-only archive; the authenticated portal rejects packages missing a supported plugin manifest.

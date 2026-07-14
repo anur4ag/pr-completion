@@ -23,7 +23,7 @@ Before filing:
 
 ## What to expect
 
-This is an open-source project maintained by an individual publisher.
+This is an open-source project. Marketplace listing identity is **Traycer**; the GitHub repository is owned by [anur4ag](https://github.com/anur4ag).
 Responses are best-effort.
 There is no paid SLA and no dedicated support mailbox operated as a product service.
 

@@ -120,6 +120,7 @@ REQUIRED_FILE_GROUPS: dict[str, tuple[str, ...]] = {
         ".claude-plugin/plugin.json",
         ".claude-plugin/marketplace.json",
         ".codex-plugin/plugin.json",
+        "assets/traycer-icon.png",
     ),
     "skills": (
         "skills/take-pr-to-completion/SKILL.md",
@@ -294,6 +295,19 @@ def check_versions(root: Path, findings: list[str]) -> str | None:
     return version
 
 
+def _png_dimensions(path: Path) -> tuple[int, int] | None:
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    if len(data) < 24 or data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
+        return None
+    import struct
+
+    width, height = struct.unpack(">II", data[16:24])
+    return int(width), int(height)
+
+
 def check_publisher_metadata(root: Path, findings: list[str]) -> None:
     for relative in (
         ".claude-plugin/plugin.json",
@@ -305,6 +319,11 @@ def check_publisher_metadata(root: Path, findings: list[str]) -> None:
         author = payload.get("author")
         if not isinstance(author, dict) or not str(author.get("name") or "").strip():
             findings.append(f"{relative}: author.name is required")
+        elif str(author.get("name") or "").strip() != "Traycer":
+            findings.append(
+                f"{relative}: author.name must be 'Traycer' for the verified "
+                "Business — Traycer portal identity"
+            )
         repository = payload.get("repository")
         if not isinstance(repository, str) or "github.com/anur4ag/pr-completion" not in repository:
             findings.append(
@@ -321,6 +340,58 @@ def check_publisher_metadata(root: Path, findings: list[str]) -> None:
     owner = marketplace.get("owner")
     if not isinstance(owner, dict) or not str(owner.get("name") or "").strip():
         findings.append(".claude-plugin/marketplace.json: owner.name is required")
+    elif str(owner.get("name") or "").strip() != "Traycer":
+        findings.append(
+            ".claude-plugin/marketplace.json: owner.name must be 'Traycer'"
+        )
+
+
+def check_codex_portal_visuals(root: Path, findings: list[str]) -> None:
+    """Portal requires square composerIcon and logo under the plugin root."""
+    payload = load_json(root / ".codex-plugin" / "plugin.json", findings)
+    if payload is None:
+        return
+    interface = payload.get("interface")
+    if not isinstance(interface, dict):
+        findings.append(".codex-plugin/plugin.json: interface object is required")
+        return
+    developer = interface.get("developerName")
+    if developer != "Traycer":
+        findings.append(
+            ".codex-plugin/plugin.json: interface.developerName must be 'Traycer'"
+        )
+    for field in ("composerIcon", "logo"):
+        value = interface.get(field)
+        if not isinstance(value, str) or not value.startswith("./"):
+            findings.append(
+                f".codex-plugin/plugin.json: interface.{field} must be a "
+                "plugin-root-relative path starting with ./"
+            )
+            continue
+        if ".." in Path(value).parts:
+            findings.append(
+                f".codex-plugin/plugin.json: interface.{field} escapes plugin root"
+            )
+            continue
+        rel = value[2:] if value.startswith("./") else value
+        path = root / rel
+        if not path.is_file():
+            findings.append(
+                f".codex-plugin/plugin.json: interface.{field} missing file {value}"
+            )
+            continue
+        dims = _png_dimensions(path)
+        if dims is None:
+            findings.append(
+                f".codex-plugin/plugin.json: interface.{field} must be a PNG ({value})"
+            )
+            continue
+        width, height = dims
+        if width != height or width < 512 or width > 2048:
+            findings.append(
+                f".codex-plugin/plugin.json: interface.{field} must be square "
+                f"512-2048px (got {width}x{height} for {value})"
+            )
 
 
 def check_skills(root: Path, findings: list[str]) -> None:
@@ -434,6 +505,7 @@ def validate(root: Path) -> list[str]:
     check_required_files(root, findings)
     check_versions(root, findings)
     check_publisher_metadata(root, findings)
+    check_codex_portal_visuals(root, findings)
     check_skills(root, findings)
     check_package_hygiene(root, findings)
     return findings

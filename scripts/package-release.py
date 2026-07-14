@@ -200,6 +200,7 @@ def list_plugin_files(root: Path) -> list[str]:
         ".claude-plugin/plugin.json",
         ".claude-plugin/marketplace.json",
         ".codex-plugin/plugin.json",
+        "assets/traycer-icon.png",
         "skills/take-pr-to-completion/SKILL.md",
         "skills/commit-workspace-changes/SKILL.md",
         "skills/gh-review-comment-triage/SKILL.md",

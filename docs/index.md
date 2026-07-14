@@ -74,9 +74,9 @@ See [Skills and safety](skills.md) for skill authority and the full mutation bou
 
 ## Publisher
 
-- Publisher name: **Anurag Sharma** (individual)
-- GitHub: [anur4ag](https://github.com/anur4ag)
+- Marketplace / directory publisher identity: **Traycer** (portal label **Business — Traycer**)
+- GitHub repository owner: [anur4ag](https://github.com/anur4ag)
 - Canonical repository: [anur4ag/pr-completion](https://github.com/anur4ag/pr-completion)
 - License: MIT
 
-Individual publisher verification for directory/marketplace surfaces is an external step and is not claimed complete on these pages.
+Copyright attribution remains in the MIT `LICENSE` file. OpenAI portal submission under the verified business identity is a separate external step and is not claimed complete on these pages.

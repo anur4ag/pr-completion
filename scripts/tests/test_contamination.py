@@ -47,8 +47,10 @@ def _run_validate(root: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _seed_complete_package(root: Path, version: str = "0.1.0") -> None:
+def _seed_complete_package(root: Path, version: str | None = None) -> None:
     """Copy every surface validate-release requires."""
+    if version is None:
+        version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
     ignore = shutil.ignore_patterns(
         ".git",
         "__pycache__",
@@ -69,6 +71,7 @@ def _seed_complete_package(root: Path, version: str = "0.1.0") -> None:
         "SECURITY.md",
         ".claude-plugin",
         ".codex-plugin",
+        "assets",
         "skills",
         "scripts",
         "docs",
@@ -85,6 +88,20 @@ def _seed_complete_package(root: Path, version: str = "0.1.0") -> None:
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, dest)
     (root / "VERSION").write_text(f"{version}\n", encoding="utf-8")
+    for relative in (
+        ".claude-plugin/plugin.json",
+        ".codex-plugin/plugin.json",
+    ):
+        path = root / relative
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["version"] = version
+        path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    market = root / ".claude-plugin/marketplace.json"
+    market_payload = json.loads(market.read_text(encoding="utf-8"))
+    for plugin in market_payload.get("plugins", []):
+        if isinstance(plugin, dict) and plugin.get("name") == "pr-completion":
+            plugin["version"] = version
+    market.write_text(json.dumps(market_payload, indent=2) + "\n", encoding="utf-8")
 
 
 class ContaminationRejectionTests(unittest.TestCase):

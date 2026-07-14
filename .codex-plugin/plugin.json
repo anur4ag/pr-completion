@@ -1,9 +1,9 @@
 {
   "name": "pr-completion",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Validate and commit local changes, then deterministically watch GitHub pull requests through CI, reviews, conflicts, and verified merge readiness.",
   "author": {
-    "name": "Anurag Sharma",
+    "name": "Traycer",
     "url": "https://github.com/anur4ag"
   },
   "homepage": "https://anur4ag.github.io/pr-completion/",
@@ -21,7 +21,7 @@
     "displayName": "PR Completion",
     "shortDescription": "Autonomously drive pull requests to verified merge readiness",
     "longDescription": "Discover changed repositories, create validated commits, run a configurable PR state-machine watcher, triage review rounds, resolve upstream conflicts safely, and stop at verified merge readiness without merging or enabling auto-merge.",
-    "developerName": "Anurag Sharma",
+    "developerName": "Traycer",
     "category": "Productivity",
     "capabilities": [
       "Read",
@@ -30,6 +30,8 @@
     "websiteURL": "https://anur4ag.github.io/pr-completion/",
     "privacyPolicyURL": "https://anur4ag.github.io/pr-completion/privacy/",
     "termsOfServiceURL": "https://anur4ag.github.io/pr-completion/terms/",
+    "composerIcon": "./assets/traycer-icon.png",
+    "logo": "./assets/traycer-icon.png",
     "defaultPrompt": "Use $pr-completion:take-pr-to-completion to autonomously drive this pull request through CI, review, and conflicts until it is verified merge-ready. Do not merge or enable auto-merge."
   }
 }

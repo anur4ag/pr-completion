@@ -1,12 +1,24 @@
 #!/usr/bin/env python3
-"""Build and validate the immutable OpenAI skills-only submission artifacts.
+"""Build and validate the OpenAI portal upload package for a public release.
 
-The portal upload is reconstructed from the exact public v0.1.0 Git objects,
-never from the current working tree.  Its byte checksum must match the tagged
-skills-source release asset before any output is accepted.
+Portal evidence (v0.1.0 rejection):
+  1. skills-only ZIP rejected: missing supported plugin manifest at ZIP root
+     or inside the sole top-level directory.
+  2. full plugin ZIP rejected without interface.composerIcon and interface.logo
+     referencing square images.
+  3. Verified portal identity is Business — Traycer.
+
+The authenticated upload artifact is therefore the public plugin package
+(manifests + skills + referenced square assets + release surfaces), not a
+skills-tree-only ZIP and not a private overlay that differs from the tagged
+public release.
+
+Pins below are filled after the v0.1.1 tag and GitHub Release exist. Local
+reconstruction must match the published plugin ZIP checksum when pins are set.
 
 Usage:
   python3 -B scripts/package-openai-submission.py
+  python3 -B scripts/package-openai-submission.py --from-working-tree
   python3 -B scripts/package-openai-submission.py --check-urls
 """
 
@@ -14,10 +26,10 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
-import stat
 import struct
 import subprocess
 import sys
@@ -29,66 +41,16 @@ from pathlib import Path
 from typing import Any
 
 
-RELEASE_VERSION = "0.1.0"
-RELEASE_REF = "v0.1.0"
-RELEASE_COMMIT = "e56ef4e79f44e295cb17dc66b3b03f622c780f09"
-RELEASE_SKILLS_SHA256 = (
-    "1cc653d0b5b9879109c31105c98a3d211f484ad409f6b23c6336f255e525536e"
-)
-SKILLS_ARCHIVE_ROOT = "pr-completion-0.1.0-skills"
-MATERIALS_ARCHIVE_ROOT = "pr-completion-0.1.0-openai-materials"
-ZIP_DATE_TIME = (1980, 1, 1, 0, 0, 0)
+RELEASE_VERSION = "0.1.1"
+RELEASE_REF = "v0.1.1"
+# Filled after tag + release publish. Empty string means "resolve from tag /
+# working tree and skip published-checksum pin until set".
+RELEASE_COMMIT = ""
+RELEASE_PLUGIN_SHA256 = ""
 
-# The complete v0.1.0 skills tree. Any addition, deletion, rename, symlink, or
-# mode outside regular 0644/0755 files is a hard failure and requires a new
-# versioned release rather than a relaxed allowlist.
-ALLOWED_SKILL_PATHS = (
-    "skills/commit-workspace-changes/SKILL.md",
-    "skills/commit-workspace-changes/agents/openai.yaml",
-    "skills/gh-review-comment-triage/SKILL.md",
-    "skills/merge-conflict-resolution/SKILL.md",
-    "skills/take-pr-to-completion/SKILL.md",
-    "skills/take-pr-to-completion/agents/openai.yaml",
-    "skills/take-pr-to-completion/scripts/pr_watch.py",
-    "skills/take-pr-to-completion/tests/fixtures/blocked.json",
-    "skills/take-pr-to-completion/tests/fixtures/conflict.json",
-    "skills/take-pr-to-completion/tests/fixtures/empty-checks.json",
-    "skills/take-pr-to-completion/tests/fixtures/external-auto-merge-empty-object.json",
-    "skills/take-pr-to-completion/tests/fixtures/external-auto-merge-failing-ci.json",
-    "skills/take-pr-to-completion/tests/fixtures/external-auto-merge-pending-ci.json",
-    "skills/take-pr-to-completion/tests/fixtures/external-auto-merge.json",
-    "skills/take-pr-to-completion/tests/fixtures/has-hooks-merge-state.json",
-    "skills/take-pr-to-completion/tests/fixtures/incoherent-pass-failure.json",
-    "skills/take-pr-to-completion/tests/fixtures/incoherent-pass-in-progress.json",
-    "skills/take-pr-to-completion/tests/fixtures/malformed-check-row.json",
-    "skills/take-pr-to-completion/tests/fixtures/merged.json",
-    "skills/take-pr-to-completion/tests/fixtures/missing-head-sha.json",
-    "skills/take-pr-to-completion/tests/fixtures/pending-ci.json",
-    "skills/take-pr-to-completion/tests/fixtures/ready-to-merge.json",
-    "skills/take-pr-to-completion/tests/fixtures/repository-layout.json",
-    "skills/take-pr-to-completion/tests/fixtures/review-comment.json",
-    "skills/take-pr-to-completion/tests/fixtures/unknown-check-bucket.json",
-    "skills/take-pr-to-completion/tests/fixtures/unstable-merge-state.json",
-    "skills/take-pr-to-completion/tests/safety-scanner-fixtures/README.md",
-    "skills/take-pr-to-completion/tests/safety-scanner-fixtures/allowed-data-only.txt",
-    "skills/take-pr-to-completion/tests/safety-scanner-fixtures/payload-alias-merge.txt",
-    "skills/take-pr-to-completion/tests/safety-scanner-fixtures/payload-broad-do-not.txt",
-    "skills/take-pr-to-completion/tests/safety-scanner-fixtures/payload-cli-merge.txt",
-    "skills/take-pr-to-completion/tests/safety-scanner-fixtures/payload-gh-alias-set.txt",
-    "skills/take-pr-to-completion/tests/safety-scanner-fixtures/payload-gh-api-merge.txt",
-    "skills/take-pr-to-completion/tests/safety-scanner-fixtures/payload-git-force.txt",
-    "skills/take-pr-to-completion/tests/safety-scanner-fixtures/payload-graphql-automerge.txt",
-    "skills/take-pr-to-completion/tests/safety-scanner-fixtures/payload-mixed-negation-worry.txt",
-    "skills/take-pr-to-completion/tests/safety-scanner-fixtures/payload-mixed-negation.txt",
-    "skills/take-pr-to-completion/tests/safety-scanner-fixtures/payload-production-marker-bypass.py.txt",
-    "skills/take-pr-to-completion/tests/safety-scanner-fixtures/payload-python-subprocess.txt",
-    "skills/take-pr-to-completion/tests/safety-scanner-fixtures/payload-reordered-automerge.txt",
-    "skills/take-pr-to-completion/tests/safety-scanner-fixtures/payload-rest-merge.txt",
-    "skills/take-pr-to-completion/tests/safety-scanner-fixtures/payload-test-helper-no-marker.sh.txt",
-    "skills/take-pr-to-completion/tests/safety-scanner-fixtures/payload-test-helper-with-marker.sh.txt",
-    "skills/take-pr-to-completion/tests/safety-scanner-fixtures/payload-wrapped-cli.txt",
-    "skills/take-pr-to-completion/tests/test_pr_watch.py",
-)
+PORTAL_ARCHIVE_ROOT = f"pr-completion-{RELEASE_VERSION}"
+MATERIALS_ARCHIVE_ROOT = f"pr-completion-{RELEASE_VERSION}-openai-materials"
+ZIP_DATE_TIME = (1980, 1, 1, 0, 0, 0)
 
 ALLOWED_MATERIAL_PATHS = (
     "README.md",
@@ -143,10 +105,26 @@ SECRET_PATTERNS = (
 )
 CACHEBUSTER_RE = re.compile(rb"\+codex\.[0-9]{8,}", re.IGNORECASE)
 OFFICIAL_SUBMISSION_DOC = "https://learn.chatgpt.com/docs/submit-plugins"
+SUPPORTED_MANIFEST_RELATIVES = (
+    ".codex-plugin/plugin.json",
+    ".claude-plugin/plugin.json",
+    ".agent-plugin/plugin.json",
+)
 
 
 class SubmissionError(Exception):
     """Submission input is unsafe, incomplete, or not the pinned release."""
+
+
+def _load_package_release_module() -> Any:
+    path = Path(__file__).resolve().parent / "package-release.py"
+    spec = importlib.util.spec_from_file_location("pr_completion_package_release", path)
+    if spec is None or spec.loader is None:
+        raise SubmissionError(f"could not load {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def _run_git(repo: Path, args: list[str], *, text: bool = False) -> bytes | str:
@@ -190,8 +168,11 @@ def _scan_bytes(relative: str, data: bytes) -> None:
     _validate_relative_path(relative)
     if PERSONAL_PATH_RE.search(data):
         raise SubmissionError(f"personal absolute path found in {relative}")
-    if CACHEBUSTER_RE.search(data):
-        raise SubmissionError(f"timestamp cachebuster found in {relative}")
+    # Cachebusters are fatal only in release identity files (tests may mention
+    # the pattern when asserting rejection).
+    if relative == "VERSION" or relative.endswith(".json"):
+        if CACHEBUSTER_RE.search(data):
+            raise SubmissionError(f"timestamp cachebuster found in {relative}")
     for pattern in SECRET_PATTERNS:
         if pattern.search(data):
             raise SubmissionError(f"credential-like content found in {relative}")
@@ -199,44 +180,72 @@ def _scan_bytes(relative: str, data: bytes) -> None:
 
 def resolve_tag(repo: Path) -> str:
     resolved = str(
-        _run_git(repo, ["rev-parse", "--verify", f"refs/tags/{RELEASE_REF}^{{commit}}"], text=True)
+        _run_git(
+            repo,
+            ["rev-parse", "--verify", f"refs/tags/{RELEASE_REF}^{{commit}}"],
+            text=True,
+        )
     ).strip()
-    if resolved != RELEASE_COMMIT:
+    if RELEASE_COMMIT and resolved != RELEASE_COMMIT:
         raise SubmissionError(
-            f"{RELEASE_REF} resolves to {resolved}, expected {RELEASE_COMMIT}; refusing retag/drift"
+            f"{RELEASE_REF} resolves to {resolved}, expected {RELEASE_COMMIT}; "
+            "refusing retag/drift"
         )
     return resolved
 
 
-def load_tagged_skills(repo: Path) -> dict[str, tuple[int, bytes]]:
+def load_tagged_files(repo: Path) -> dict[str, tuple[int, bytes]]:
+    """Load the full public plugin tree from the immutable release tag."""
     commit = resolve_tag(repo)
-    raw = bytes(_run_git(repo, ["ls-tree", "-r", "-z", "--full-tree", commit, "--", "skills"]))
+    raw = bytes(_run_git(repo, ["ls-tree", "-r", "-z", "--full-tree", commit]))
     entries: dict[str, tuple[int, bytes]] = {}
-    discovered: list[str] = []
     for item in raw.split(b"\0"):
         if not item:
             continue
         metadata, raw_path = item.split(b"\t", 1)
         mode_raw, kind_raw, object_id = metadata.split(b" ", 2)
         relative = raw_path.decode("utf-8")
-        discovered.append(relative)
-        if kind_raw != b"blob" or mode_raw not in {b"100644", b"100755"}:
+        if kind_raw != b"blob":
+            continue
+        if mode_raw not in {b"100644", b"100755"}:
             raise SubmissionError(
-                f"tagged skill entry is not an allowed regular file: {relative} "
+                f"tagged entry is not an allowed regular file: {relative} "
                 f"({mode_raw.decode()} {kind_raw.decode()})"
             )
+        # Skip paths that package-release would exclude from the plugin ZIP.
+        if relative.startswith(
+            (
+                "docs/_site/",
+                "release-out/",
+                "submission-out/",
+                ".codex-staging/",
+                ".cachebust/",
+            )
+        ):
+            continue
+        if any(
+            part in FORBIDDEN_PATH_PARTS
+            for part in Path(relative).parts
+        ):
+            continue
         data = bytes(_run_git(repo, ["cat-file", "blob", object_id.decode("ascii")]))
         _scan_bytes(relative, data)
         entries[relative] = (0o755 if mode_raw == b"100755" else 0o644, data)
+    if not entries:
+        raise SubmissionError("tagged plugin tree is empty")
+    return entries
 
-    expected = list(ALLOWED_SKILL_PATHS)
-    if discovered != expected:
-        missing = sorted(set(expected) - set(discovered))
-        extra = sorted(set(discovered) - set(expected))
-        raise SubmissionError(
-            f"tagged skill allowlist mismatch; missing={missing}, extra={extra}, "
-            "or member order differs"
-        )
+
+def load_working_tree_files(repo: Path) -> dict[str, tuple[int, bytes]]:
+    package_mod = _load_package_release_module()
+    relatives = package_mod.list_plugin_files(repo)
+    entries: dict[str, tuple[int, bytes]] = {}
+    for relative in relatives:
+        path = repo / relative
+        data = path.read_bytes()
+        _scan_bytes(relative, data)
+        mode = 0o755 if package_mod.file_mode(path) == 0o755 else 0o644
+        entries[relative] = (mode, data)
     return entries
 
 
@@ -255,22 +264,125 @@ def _write_zip(path: Path, members: list[tuple[str, int, bytes]]) -> None:
             archive.writestr(info, data, compress_type=zipfile.ZIP_DEFLATED)
 
 
-def build_skills_archive(
-    out_path: Path, tagged: dict[str, tuple[int, bytes]]
+def build_portal_plugin_zip(
+    out_path: Path, members: dict[str, tuple[int, bytes]]
 ) -> str:
-    members = [
-        (f"{SKILLS_ARCHIVE_ROOT}/{relative}", tagged[relative][0], tagged[relative][1])
-        for relative in ALLOWED_SKILL_PATHS
+    ordered = sorted(members)
+    zip_members = [
+        (f"{PORTAL_ARCHIVE_ROOT}/{relative}", members[relative][0], members[relative][1])
+        for relative in ordered
     ]
-    _write_zip(out_path, members)
+    _write_zip(out_path, zip_members)
     digest = sha256_file(out_path)
-    if digest != RELEASE_SKILLS_SHA256:
+    if RELEASE_PLUGIN_SHA256 and digest != RELEASE_PLUGIN_SHA256:
         out_path.unlink(missing_ok=True)
         raise SubmissionError(
-            f"reconstructed tagged skills checksum {digest} does not match "
-            f"published {RELEASE_SKILLS_SHA256}"
+            f"reconstructed portal plugin checksum {digest} does not match "
+            f"published pin {RELEASE_PLUGIN_SHA256}"
         )
     return digest
+
+
+def validate_png_bytes(data: bytes, *, label: str) -> dict[str, int]:
+    if len(data) < 24 or data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
+        raise SubmissionError(f"{label} is not a valid PNG with an IHDR")
+    width, height = struct.unpack(">II", data[16:24])
+    if width != height or width < 512 or width > 2048:
+        raise SubmissionError(
+            f"{label} must be square and 512-2048px (got {width}x{height})"
+        )
+    return {"width": width, "height": height}
+
+
+def _decode_json_member(
+    members: dict[str, tuple[int, bytes]], relative: str
+) -> dict[str, Any]:
+    if relative not in members:
+        raise SubmissionError(f"portal package missing {relative}")
+    try:
+        payload = json.loads(members[relative][1].decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise SubmissionError(f"invalid JSON in {relative}: {error}") from error
+    if not isinstance(payload, dict):
+        raise SubmissionError(f"{relative} must contain a JSON object")
+    return payload
+
+
+def discover_manifest_relative(members: dict[str, tuple[int, bytes]]) -> str:
+    for relative in SUPPORTED_MANIFEST_RELATIVES:
+        if relative in members:
+            return relative
+    raise SubmissionError(
+        "portal package missing a supported plugin manifest "
+        "(.codex-plugin/plugin.json, .agent-plugin/plugin.json, or "
+        ".claude-plugin/plugin.json) under the sole top-level plugin directory"
+    )
+
+
+def resolve_plugin_relative(value: str) -> str:
+    if not isinstance(value, str) or not value.startswith("./"):
+        raise SubmissionError(
+            f"visual path must be plugin-root-relative starting with ./ (got {value!r})"
+        )
+    if ".." in Path(value).parts:
+        raise SubmissionError(f"visual path escapes plugin root: {value}")
+    return value[2:]
+
+
+def validate_portal_package(members: dict[str, tuple[int, bytes]]) -> dict[str, Any]:
+    """Enforce authenticated portal preflight against reconstructed members."""
+    if not members:
+        raise SubmissionError("portal package has no members")
+    if ".codex-plugin/plugin.json" not in members:
+        raise SubmissionError(
+            "portal package must include public .codex-plugin/plugin.json "
+            "(skills-only ZIPs are rejected by the authenticated upload flow)"
+        )
+    if not any(path.startswith("skills/") and path.endswith("/SKILL.md") for path in members):
+        raise SubmissionError("portal package must include skills/")
+
+    manifest_rel = discover_manifest_relative(members)
+    payload = _decode_json_member(members, manifest_rel)
+    version = payload.get("version")
+    if version != RELEASE_VERSION:
+        raise SubmissionError(
+            f"{manifest_rel} version {version!r} does not match release "
+            f"{RELEASE_VERSION!r}"
+        )
+    if payload.get("name") != "pr-completion":
+        raise SubmissionError(f"{manifest_rel} name must be pr-completion")
+
+    # Codex portal path: visual fields live on the Codex manifest interface.
+    codex = _decode_json_member(members, ".codex-plugin/plugin.json")
+    interface = codex.get("interface")
+    if not isinstance(interface, dict):
+        raise SubmissionError(".codex-plugin/plugin.json missing interface object")
+    if interface.get("developerName") != "Traycer":
+        raise SubmissionError(
+            "interface.developerName must be Traycer (Business — Traycer portal identity)"
+        )
+    visuals = {}
+    for field in ("composerIcon", "logo"):
+        if field not in interface:
+            raise SubmissionError(
+                f".codex-plugin/plugin.json missing required interface.{field}"
+            )
+        relative = resolve_plugin_relative(interface[field])
+        if relative not in members:
+            raise SubmissionError(
+                f"interface.{field} references missing package member {relative}"
+            )
+        dims = validate_png_bytes(members[relative][1], label=f"interface.{field}")
+        visuals[field] = {"path": f"./{relative}", **dims}
+
+    # Assets must live inside the plugin root members (already enforced by
+    # relative path resolution without .. and membership check).
+    return {
+        "manifest": manifest_rel,
+        "version": version,
+        "visuals": visuals,
+        "memberCount": len(members),
+    }
 
 
 def _load_json(path: Path) -> Any:
@@ -311,17 +423,6 @@ def load_materials(materials_root: Path) -> dict[str, bytes]:
     return materials
 
 
-def validate_png(data: bytes) -> dict[str, int]:
-    if len(data) < 24 or data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
-        raise SubmissionError("assets/logo.png is not a valid PNG with an IHDR")
-    width, height = struct.unpack(">II", data[16:24])
-    if width != height or width < 512 or width > 2048:
-        raise SubmissionError(
-            f"assets/logo.png must be square and 512-2048px (got {width}x{height})"
-        )
-    return {"width": width, "height": height}
-
-
 def validate_listing(materials_root: Path, materials: dict[str, bytes]) -> dict[str, Any]:
     listing = _load_json(materials_root / "listing.json")
     if not isinstance(listing, dict):
@@ -336,18 +437,30 @@ def validate_listing(materials_root: Path, materials: dict[str, bytes]) -> dict[
         if listing.get(key) != expected:
             raise SubmissionError(f"listing.{key} must be {expected!r}")
     source = listing.get("source")
-    expected_source = {
-        "tag": RELEASE_REF,
-        "commit": RELEASE_COMMIT,
-        "skillsSourceSHA256": RELEASE_SKILLS_SHA256,
-    }
-    if source != expected_source:
-        raise SubmissionError("listing source identity does not match the pinned release")
+    if not isinstance(source, dict) or source.get("tag") != RELEASE_REF:
+        raise SubmissionError("listing source.tag must match the pinned release tag")
+    if source.get("version") != RELEASE_VERSION:
+        raise SubmissionError("listing source.version must match the pinned release version")
+    if RELEASE_COMMIT and source.get("commit") not in {RELEASE_COMMIT, ""}:
+        # Allow empty commit pin before the tag lands; once pinned, require match.
+        if source.get("commit") != RELEASE_COMMIT:
+            raise SubmissionError("listing source.commit does not match the pinned release")
+    if RELEASE_PLUGIN_SHA256:
+        if source.get("portalPluginSHA256") != RELEASE_PLUGIN_SHA256:
+            raise SubmissionError(
+                "listing source.portalPluginSHA256 does not match the published pin"
+            )
     identity = listing.get("developerIdentity")
-    if not isinstance(identity, dict) or identity.get("portalVerification") != "requires-confirmation":
-        raise SubmissionError("publisher verification must remain requires-confirmation until observed")
-    if identity.get("displayName") != "Anurag Sharma" or identity.get("publisherType") != "individual":
-        raise SubmissionError("listing developer identity does not match the public individual publisher")
+    if not isinstance(identity, dict):
+        raise SubmissionError("listing developerIdentity is required")
+    if identity.get("displayName") != "Traycer":
+        raise SubmissionError("listing developerIdentity.displayName must be Traycer")
+    if identity.get("portalLabel") != "Business — Traycer":
+        raise SubmissionError(
+            "listing developerIdentity.portalLabel must be 'Business — Traycer'"
+        )
+    if identity.get("publisherType") != "business":
+        raise SubmissionError("listing developerIdentity.publisherType must be business")
     urls = []
     for key in (
         "websiteURL",
@@ -363,8 +476,13 @@ def validate_listing(materials_root: Path, materials: dict[str, bytes]) -> dict[
         urls.append(value)
     if listing.get("logo") != "assets/logo.png":
         raise SubmissionError("listing logo must point to assets/logo.png")
-    logo = validate_png(materials["assets/logo.png"])
-    return {"urls": urls, "logo": logo}
+    logo = validate_png_bytes(materials["assets/logo.png"], label="assets/logo.png")
+    expected_release = (
+        f"https://github.com/anur4ag/pr-completion/releases/tag/{RELEASE_REF}"
+    )
+    if listing.get("releaseURL") != expected_release:
+        raise SubmissionError(f"listing.releaseURL must be {expected_release}")
+    return {"urls": urls, "logo": logo, "identity": identity}
 
 
 def validate_prompts(materials_root: Path) -> int:
@@ -382,13 +500,13 @@ def validate_prompts(materials_root: Path) -> int:
 def _source_bytes(
     reference: str,
     materials_root: Path,
-    tagged: dict[str, tuple[int, bytes]],
+    members: dict[str, tuple[int, bytes]],
 ) -> bytes:
     if reference.startswith("tag:"):
         relative = reference.removeprefix("tag:")
-        if relative not in tagged:
-            raise SubmissionError(f"case references non-allowlisted tagged path: {relative}")
-        return tagged[relative][1]
+        if relative not in members:
+            raise SubmissionError(f"case references non-package path: {relative}")
+        return members[relative][1]
     if reference.startswith("submission:"):
         relative = reference.removeprefix("submission:")
         if relative not in ALLOWED_MATERIAL_PATHS:
@@ -397,11 +515,8 @@ def _source_bytes(
     raise SubmissionError(f"case source must use tag: or submission: prefix: {reference}")
 
 
-def _extract_tagged_tree(
-    root: Path, tagged: dict[str, tuple[int, bytes]]
-) -> None:
-    for relative in ALLOWED_SKILL_PATHS:
-        mode, data = tagged[relative]
+def _extract_members(root: Path, members: dict[str, tuple[int, bytes]]) -> None:
+    for relative, (mode, data) in members.items():
         target = root / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
@@ -409,7 +524,7 @@ def _extract_tagged_tree(
 
 
 def validate_cases(
-    materials_root: Path, tagged: dict[str, tuple[int, bytes]]
+    materials_root: Path, members: dict[str, tuple[int, bytes]]
 ) -> list[dict[str, Any]]:
     payload = _load_json(materials_root / "test-cases.json")
     cases = payload.get("cases") if isinstance(payload, dict) else None
@@ -418,15 +533,17 @@ def validate_cases(
     positives = [case for case in cases if isinstance(case, dict) and case.get("kind") == "positive"]
     negatives = [case for case in cases if isinstance(case, dict) and case.get("kind") == "negative"]
     if len(cases) != 8 or len(positives) != 5 or len(negatives) != 3:
-        raise SubmissionError("test-cases.json must contain exactly five positive and three negative cases")
+        raise SubmissionError(
+            "test-cases.json must contain exactly five positive and three negative cases"
+        )
     ids = [case.get("id") for case in cases]
     if len(set(ids)) != len(ids) or any(not isinstance(item, str) for item in ids):
         raise SubmissionError("test case ids must be unique strings")
 
     results: list[dict[str, Any]] = []
     with tempfile.TemporaryDirectory(prefix="pr-completion-openai-cases-") as temporary:
-        extracted = Path(temporary) / "tagged"
-        _extract_tagged_tree(extracted, tagged)
+        extracted = Path(temporary) / "package"
+        _extract_members(extracted, members)
         watcher = extracted / "skills/take-pr-to-completion/scripts/pr_watch.py"
         for case in cases:
             for required in (
@@ -450,20 +567,26 @@ def validate_cases(
                     raise SubmissionError(f"case {case['id']} has a non-object check")
                 check_type = check.get("type")
                 if check_type == "containsAll":
-                    text = _source_bytes(check["path"], materials_root, tagged).decode("utf-8")
+                    text = _source_bytes(check["path"], materials_root, members).decode("utf-8")
                     missing = [value for value in check["values"] if value not in text]
                     if missing:
-                        raise SubmissionError(f"case {case['id']} missing required source text: {missing}")
+                        raise SubmissionError(
+                            f"case {case['id']} missing required source text: {missing}"
+                        )
                     check_results.append({"type": check_type, "status": "passed"})
                 elif check_type == "jsonPaths":
-                    data = json.loads(_source_bytes(check["path"], materials_root, tagged))
+                    data = json.loads(_source_bytes(check["path"], materials_root, members))
                     serialized = json.dumps(data, sort_keys=True)
-                    missing = [value for value in check["requiredValues"] if value not in serialized]
+                    missing = [
+                        value for value in check["requiredValues"] if value not in serialized
+                    ]
                     if missing:
-                        raise SubmissionError(f"case {case['id']} missing fixture values: {missing}")
+                        raise SubmissionError(
+                            f"case {case['id']} missing fixture values: {missing}"
+                        )
                     check_results.append({"type": check_type, "status": "passed"})
                 elif check_type == "watcherFixture":
-                    fixture_data = _source_bytes(check["fixture"], materials_root, tagged)
+                    fixture_data = _source_bytes(check["fixture"], materials_root, members)
                     fixture = Path(temporary) / f"{case['id']}.json"
                     fixture.write_bytes(fixture_data)
                     completed = subprocess.run(
@@ -476,20 +599,27 @@ def validate_cases(
                     )
                     if completed.returncode not in {0, 20}:
                         raise SubmissionError(
-                            f"case {case['id']} watcher exited {completed.returncode}: {completed.stderr.strip()}"
+                            f"case {case['id']} watcher exited {completed.returncode}: "
+                            f"{completed.stderr.strip()}"
                         )
                     try:
                         observation = json.loads(completed.stdout)
                     except json.JSONDecodeError as error:
-                        raise SubmissionError(f"case {case['id']} emitted invalid watcher JSON") from error
-                    action_types = [action.get("type") for action in observation.get("actions", [])]
+                        raise SubmissionError(
+                            f"case {case['id']} emitted invalid watcher JSON"
+                        ) from error
+                    action_types = [
+                        action.get("type") for action in observation.get("actions", [])
+                    ]
                     if observation.get("state") != check["expectedState"]:
                         raise SubmissionError(
-                            f"case {case['id']} state {observation.get('state')!r} != {check['expectedState']!r}"
+                            f"case {case['id']} state {observation.get('state')!r} != "
+                            f"{check['expectedState']!r}"
                         )
                     if action_types != check["expectedActionTypes"]:
                         raise SubmissionError(
-                            f"case {case['id']} actions {action_types!r} != {check['expectedActionTypes']!r}"
+                            f"case {case['id']} actions {action_types!r} != "
+                            f"{check['expectedActionTypes']!r}"
                         )
                     check_results.append(
                         {
@@ -500,7 +630,9 @@ def validate_cases(
                         }
                     )
                 else:
-                    raise SubmissionError(f"case {case['id']} has unknown check type {check_type!r}")
+                    raise SubmissionError(
+                        f"case {case['id']} has unknown check type {check_type!r}"
+                    )
             results.append({"id": case["id"], "kind": case["kind"], "checks": check_results})
     return results
 
@@ -510,7 +642,7 @@ def check_urls(urls: list[str]) -> list[dict[str, Any]]:
     for url in urls:
         request = urllib.request.Request(
             url,
-            headers={"User-Agent": "pr-completion-openai-submission-validator/0.1.0"},
+            headers={"User-Agent": "pr-completion-openai-submission-validator/0.1.1"},
         )
         try:
             with urllib.request.urlopen(request, timeout=20) as response:
@@ -524,9 +656,7 @@ def check_urls(urls: list[str]) -> list[dict[str, Any]]:
     return results
 
 
-def build_materials_archive(
-    out_path: Path, materials: dict[str, bytes]
-) -> str:
+def build_materials_archive(out_path: Path, materials: dict[str, bytes]) -> str:
     members = [
         (f"{MATERIALS_ARCHIVE_ROOT}/{relative}", 0o644, materials[relative])
         for relative in ALLOWED_MATERIAL_PATHS
@@ -535,27 +665,78 @@ def build_materials_archive(
     return sha256_file(out_path)
 
 
-def package_submission(repo: Path, out_dir: Path, *, probe_urls: bool) -> dict[str, Any]:
+def inspect_portal_zip_layout(zip_path: Path) -> dict[str, Any]:
+    """Assert ZIP shape: sole top-level directory with supported manifest."""
+    with zipfile.ZipFile(zip_path) as archive:
+        names = [name for name in archive.namelist() if name and not name.endswith("/")]
+    if not names:
+        raise SubmissionError("portal ZIP is empty")
+    tops = {name.split("/", 1)[0] for name in names}
+    if len(tops) != 1:
+        raise SubmissionError(
+            f"portal ZIP must have exactly one top-level directory (found {sorted(tops)})"
+        )
+    top = next(iter(tops))
+    prefix = f"{top}/"
+    relatives = [name[len(prefix) :] for name in names if name.startswith(prefix)]
+    if not any(rel in SUPPORTED_MANIFEST_RELATIVES for rel in relatives):
+        raise SubmissionError(
+            "portal ZIP missing supported plugin manifest under the sole top-level directory"
+        )
+    return {"topLevel": top, "members": len(relatives)}
+
+
+def package_submission(
+    repo: Path,
+    out_dir: Path,
+    *,
+    probe_urls: bool,
+    from_working_tree: bool,
+) -> dict[str, Any]:
     repo = repo.resolve()
     materials_root = repo / "submission/openai"
-    tagged = load_tagged_skills(repo)
+    if from_working_tree:
+        members = load_working_tree_files(repo)
+        source_ref = "working-tree"
+        source_commit = None
+    else:
+        source_commit = resolve_tag(repo)
+        members = load_tagged_files(repo)
+        source_ref = RELEASE_REF
+
+    portal_meta = validate_portal_package(members)
     materials = load_materials(materials_root)
     listing_result = validate_listing(materials_root, materials)
     prompt_count = validate_prompts(materials_root)
-    case_results = validate_cases(materials_root, tagged)
+    case_results = validate_cases(materials_root, members)
     url_results = check_urls(listing_result["urls"]) if probe_urls else []
 
     out_dir = out_dir.resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-    skills_zip = out_dir / f"pr-completion-{RELEASE_VERSION}-openai-skills.zip"
+    portal_zip = out_dir / f"pr-completion-{RELEASE_VERSION}-portal-plugin.zip"
     materials_zip = out_dir / f"pr-completion-{RELEASE_VERSION}-openai-materials.zip"
-    skills_digest = build_skills_archive(skills_zip, tagged)
+    portal_digest = build_portal_plugin_zip(portal_zip, members)
+    layout = inspect_portal_zip_layout(portal_zip)
     materials_digest = build_materials_archive(materials_zip, materials)
+
+    # Optional cross-check against package-release when building from working tree.
+    if from_working_tree:
+        package_mod = _load_package_release_module()
+        with tempfile.TemporaryDirectory(prefix="pr-completion-portal-cmp-") as temporary:
+            compare_dir = Path(temporary)
+            package_mod.package_release(repo, compare_dir)
+            release_plugin = compare_dir / f"pr-completion-{RELEASE_VERSION}-plugin.zip"
+            release_digest = sha256_file(release_plugin)
+            if release_digest != portal_digest:
+                raise SubmissionError(
+                    "portal plugin ZIP is not byte-identical to package-release "
+                    f"plugin ZIP ({portal_digest} != {release_digest})"
+                )
 
     checksums = out_dir / "SHA256SUMS.txt"
     checksums.write_text(
         f"{materials_digest}  {materials_zip.name}\n"
-        f"{skills_digest}  {skills_zip.name}\n",
+        f"{portal_digest}  {portal_zip.name}\n",
         encoding="utf-8",
         newline="\n",
     )
@@ -563,15 +744,30 @@ def package_submission(repo: Path, out_dir: Path, *, probe_urls: bool) -> dict[s
         "schemaVersion": 1,
         "officialSubmissionDocumentation": OFFICIAL_SUBMISSION_DOC,
         "submissionType": "skills-only",
+        "portalUpload": {
+            "artifact": portal_zip.name,
+            "layout": layout,
+            "manifest": portal_meta["manifest"],
+            "visuals": portal_meta["visuals"],
+            "sha256": portal_digest,
+            "note": (
+                "Upload this ZIP on the portal Skills tab. It contains the public "
+                "release manifest, skills, and square visual assets under one "
+                "top-level plugin directory."
+            ),
+        },
         "source": {
-            "ref": RELEASE_REF,
-            "commit": RELEASE_COMMIT,
-            "skillMembers": len(tagged),
-            "skillsSHA256": skills_digest,
+            "ref": source_ref,
+            "commit": source_commit or RELEASE_COMMIT or None,
+            "version": RELEASE_VERSION,
+            "memberCount": portal_meta["memberCount"],
+            "portalPluginSHA256": portal_digest,
+            "pinnedPluginSHA256": RELEASE_PLUGIN_SHA256 or None,
         },
         "materials": {
             "members": len(materials),
             "logo": listing_result["logo"],
+            "identity": listing_result["identity"],
             "starterPrompts": prompt_count,
             "positiveCases": sum(item["kind"] == "positive" for item in case_results),
             "negativeCases": sum(item["kind"] == "negative" for item in case_results),
@@ -580,7 +776,7 @@ def package_submission(repo: Path, out_dir: Path, *, probe_urls: bool) -> dict[s
         "testCases": case_results,
         "urlChecks": url_results,
         "externalPortalState": {
-            "individualIdentityVerified": "unconfirmed",
+            "verifiedIdentity": "Business — Traycer",
             "appsManagementWrite": "unconfirmed",
             "submissionId": None,
             "status": "not-submitted",
@@ -593,32 +789,44 @@ def package_submission(repo: Path, out_dir: Path, *, probe_urls: bool) -> dict[s
         newline="\n",
     )
     return {
-        "skills_zip": skills_zip,
-        "skills_sha256": skills_digest,
+        "portal_zip": portal_zip,
+        "portal_sha256": portal_digest,
         "materials_zip": materials_zip,
         "materials_sha256": materials_digest,
         "checksums": checksums,
         "report": report_path,
         "case_count": len(case_results),
         "url_count": len(url_results),
+        "absolute_portal_zip": str(portal_zip.resolve()),
     }
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Build the pinned v0.1.0 OpenAI skills-only submission package."
+        description=(
+            "Build the portal-compliant OpenAI upload package from the public "
+            f"{RELEASE_REF} release (or working tree)."
+        )
     )
     parser.add_argument(
         "--repo",
         type=Path,
         default=Path(__file__).resolve().parents[1],
-        help="Git repository containing the immutable v0.1.0 tag",
+        help="Git repository containing the release tag or working tree",
     )
     parser.add_argument(
         "--out-dir",
         type=Path,
         default=Path("submission-out"),
-        help="ignored output directory (default: submission-out)",
+        help="output directory (default: submission-out)",
+    )
+    parser.add_argument(
+        "--from-working-tree",
+        action="store_true",
+        help=(
+            "build from the current working tree (pre-tag local portal ZIP). "
+            "Requires package-release byte-identity."
+        ),
     )
     parser.add_argument(
         "--check-urls",
@@ -627,14 +835,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     try:
-        result = package_submission(args.repo, args.out_dir, probe_urls=args.check_urls)
+        result = package_submission(
+            args.repo,
+            args.out_dir,
+            probe_urls=args.check_urls,
+            from_working_tree=args.from_working_tree,
+        )
     except SubmissionError as error:
         print(f"OpenAI submission packaging failed: {error}", file=sys.stderr)
         return 1
     print(f"validated {result['case_count']} reproducible test cases")
     if args.check_urls:
         print(f"validated {result['url_count']} public HTTPS URLs")
-    print(f"skills: {result['skills_sha256']}  {result['skills_zip']}")
+    print(f"portal: {result['portal_sha256']}  {result['portal_zip']}")
+    print(f"portal absolute path: {result['absolute_portal_zip']}")
     print(f"materials: {result['materials_sha256']}  {result['materials_zip']}")
     print(f"checksums: {result['checksums']}")
     print(f"report: {result['report']}")
