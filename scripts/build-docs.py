@@ -91,7 +91,10 @@ def parse_table(lines: list[str], start: int) -> tuple[str, int]:
         return "", start + 1
     header = rows[0]
     body = rows[1:]
-    parts = ["<table>", "<thead><tr>"]
+    parts = [
+        '<table tabindex="0" aria-label="Data table. Scroll horizontally when needed.">',
+        "<thead><tr>",
+    ]
     parts.extend(f"<th>{inline_md(cell)}</th>" for cell in header)
     parts.append("</tr></thead><tbody>")
     for row in body:
@@ -109,6 +112,7 @@ def markdown_to_html(text: str) -> str:
     out: list[str] = []
     index = 0
     in_paragraph = False
+    heading_ids: dict[str, int] = {}
 
     def close_paragraph() -> None:
         nonlocal in_paragraph
@@ -137,7 +141,11 @@ def markdown_to_html(text: str) -> str:
                 index += 1
             class_attr = f' class="language-{html.escape(lang)}"' if lang else ""
             code = html.escape("\n".join(code_lines))
-            out.append(f"<pre><code{class_attr}>{code}</code></pre>")
+            out.append(
+                '<pre tabindex="0" role="region" '
+                'aria-label="Code block. Scroll horizontally when needed.">'
+                f"<code{class_attr}>{code}</code></pre>"
+            )
             continue
 
         if stripped.startswith("<div") or stripped.startswith("</div") or stripped.startswith("<"):
@@ -152,7 +160,19 @@ def markdown_to_html(text: str) -> str:
             close_paragraph()
             level = len(heading.group(1))
             heading_text = heading.group(2)
-            heading_id = re.sub(r"[^a-z0-9]+", "-", heading_text.lower()).strip("-")
+            heading_base = re.sub(
+                r"[^a-z0-9]+", "-", heading_text.lower()
+            ).strip("-")
+            if heading_base:
+                occurrence = heading_ids.get(heading_base, 0) + 1
+                heading_ids[heading_base] = occurrence
+                heading_id = (
+                    heading_base
+                    if occurrence == 1
+                    else f"{heading_base}-{occurrence}"
+                )
+            else:
+                heading_id = ""
             id_attr = f' id="{html.escape(heading_id, quote=True)}"' if heading_id else ""
             out.append(f"<h{level}{id_attr}>{inline_md(heading_text)}</h{level}>")
             index += 1
