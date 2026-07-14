@@ -45,8 +45,8 @@ RELEASE_VERSION = "0.1.1"
 RELEASE_REF = "v0.1.1"
 # Filled after tag + release publish. Empty string means "resolve from tag /
 # working tree and skip published-checksum pin until set".
-RELEASE_COMMIT = ""
-RELEASE_PLUGIN_SHA256 = ""
+RELEASE_COMMIT = "52b2f8b710a20389237204092bbe67dd65ed89e8"
+RELEASE_PLUGIN_SHA256 = "3811207f95feda2d79bc3995f316411ed32e5f7bcad139863ec70c94735af02c"
 
 PORTAL_ARCHIVE_ROOT = f"pr-completion-{RELEASE_VERSION}"
 MATERIALS_ARCHIVE_ROOT = f"pr-completion-{RELEASE_VERSION}-openai-materials"

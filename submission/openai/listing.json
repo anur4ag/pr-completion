@@ -7,7 +7,7 @@
   "longDescription": "PR Completion packages four coordinated skills for preparing local changes, watching GitHub pull-request state, repairing branch-caused CI failures, triaging review feedback, and resolving upstream conflicts. It verifies the current head, required checks, approvals, review threads, and mergeability, then stops at merge readiness. It never merges, enables auto-merge, joins a merge queue, bypasses protections, rewrites history, or force-pushes.",
   "developerIdentity": {
     "displayName": "Traycer",
-    "portalLabel": "Business — Traycer",
+    "portalLabel": "Business \u2014 Traycer",
     "publisherType": "business",
     "portalVerification": "use-verified-business-identity"
   },
@@ -21,8 +21,8 @@
   "source": {
     "version": "0.1.1",
     "tag": "v0.1.1",
-    "commit": "",
-    "portalPluginSHA256": ""
+    "commit": "52b2f8b710a20389237204092bbe67dd65ed89e8",
+    "portalPluginSHA256": "3811207f95feda2d79bc3995f316411ed32e5f7bcad139863ec70c94735af02c"
   },
   "containsMCP": false,
   "authentication": "Uses the user's existing local GitHub CLI authentication; the plugin operates no credential service and stores no credentials.",
