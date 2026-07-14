@@ -390,11 +390,12 @@ def check_external_http_links(
     extra_urls: list[str],
     timeout: float,
     max_workers: int,
+    skip_urls: set[str],
     findings: list[str],
-) -> tuple[int, int]:
+) -> tuple[int, int, int]:
     """Validate external http(s) links.
 
-    Returns (checked_count, unique_external_count).
+    Returns (checked_count, unique_external_count, explicitly_skipped_count).
     """
     # Map normalized URL -> sources that referenced it.
     sources: dict[str, set[str]] = {}
@@ -410,10 +411,12 @@ def check_external_http_links(
     for url in extra_urls:
         add(url, "<injected>")
 
-    to_check = sorted(sources)
+    normalized_skips = {normalize_href(url) for url in skip_urls}
+    skipped = sorted(url for url in sources if url in normalized_skips)
+    to_check = sorted(url for url in sources if url not in normalized_skips)
 
     if not to_check:
-        return 0, len(sources)
+        return 0, len(sources), len(skipped)
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = {pool.submit(probe_url, url, timeout): url for url in to_check}
@@ -423,7 +426,7 @@ def check_external_http_links(
                 where = ", ".join(sorted(sources.get(url, {"?"})))
                 findings.append(f"external HTTP failed for {url} ({error}); sources: {where}")
 
-    return len(to_check), len(sources)
+    return len(to_check), len(sources), len(skipped)
 
 
 def run_internal_checks(
@@ -480,14 +483,20 @@ def main(argv: list[str] | None = None) -> int:
     run_internal_checks(root, site, site_dir, internal_findings)
 
     external_findings: list[str] = []
-    checked = unique_external = 0
+    checked = unique_external = pending_skipped = 0
     if not args.skip_external:
         hrefs = collect_all_hrefs(root, site_dir)
-        checked, unique_external = check_external_http_links(
+        pending_release = (
+            {str(site.get("release"))}
+            if site.get("release_status") == "pending" and site.get("release")
+            else set()
+        )
+        checked, unique_external, pending_skipped = check_external_http_links(
             hrefs=hrefs,
             extra_urls=list(args.extra_url or []),
             timeout=args.timeout,
             max_workers=max(1, args.max_workers),
+            skip_urls=pending_release,
             findings=external_findings,
         )
 
@@ -512,13 +521,16 @@ def main(argv: list[str] | None = None) -> int:
         for item in external_findings:
             print(f"  - {item}", file=sys.stderr)
         print(
-            f"external HTTP summary: checked={checked} unique_http={unique_external}",
+            "external HTTP summary: "
+            f"checked={checked} unique_http={unique_external} "
+            f"pending_release_skipped={pending_skipped}",
             file=sys.stderr,
         )
     else:
         print("external HTTP link check passed")
         print(
-            f"  checked={checked} unique_http={unique_external}"
+            f"  checked={checked} unique_http={unique_external} "
+            f"pending_release_skipped={pending_skipped}"
         )
 
     return 1 if failed else 0
