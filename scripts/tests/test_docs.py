@@ -6,6 +6,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import types
@@ -102,6 +103,53 @@ class CanonicalLinkTests(unittest.TestCase):
         )
         self.assertTrue(any("found 0" in item for item in missing), missing)
         self.assertTrue(any("found 2" in item for item in duplicate), duplicate)
+
+    def test_cli_reports_external_site_wrong_canonical_without_traceback(self) -> None:
+        external_site = self.root / "external-site"
+        build = subprocess.run(
+            [
+                sys.executable,
+                "-B",
+                str(SCRIPTS / "build-docs.py"),
+                "--out",
+                str(external_site),
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
+        self.assertEqual(build.returncode, 0, build.stderr)
+
+        installation = external_site / "installation" / "index.html"
+        rendered = installation.read_text(encoding="utf-8")
+        rendered = rendered.replace(
+            "https://anur4ag.github.io/pr-completion/installation/",
+            "https://anur4ag.github.io/pr-completion/",
+            1,
+        )
+        installation.write_text(rendered, encoding="utf-8")
+
+        checked = subprocess.run(
+            [
+                sys.executable,
+                "-B",
+                str(SCRIPTS / "check-docs-links.py"),
+                "--site-dir",
+                str(external_site),
+                "--skip-external",
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
+
+        self.assertEqual(checked.returncode, 1, checked.stdout + checked.stderr)
+        self.assertIn(str(installation.resolve()), checked.stderr)
+        self.assertIn("canonical", checked.stderr)
+        self.assertIn("does not match", checked.stderr)
+        self.assertNotIn("Traceback", checked.stderr)
 
 
 if __name__ == "__main__":

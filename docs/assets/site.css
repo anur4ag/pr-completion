@@ -647,6 +647,14 @@ td:first-child {
 }
 
 @media (max-width: 420px) {
+  h1,
+  .page-index h1 {
+    max-width: 100% !important;
+    font-size: clamp(2.25rem, 13vw, 3.5rem);
+    letter-spacing: -0.075em;
+    overflow-wrap: anywhere;
+  }
+
   .masthead {
     flex-direction: column;
     align-items: stretch;

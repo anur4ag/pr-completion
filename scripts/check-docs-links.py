@@ -163,6 +163,15 @@ def site_path_to_file(site_dir: Path, base_url: str, site_path: str) -> Path | N
     return None
 
 
+def display_path(path: Path, root: Path) -> str:
+    """Return a stable repository-relative label, or an absolute external label."""
+    resolved = path.resolve()
+    try:
+        return str(resolved.relative_to(root.resolve()))
+    except ValueError:
+        return str(resolved)
+
+
 def collect_md_links(text: str) -> list[str]:
     links = [match.group(2).strip() for match in MD_LINK_RE.finditer(text)]
     links.extend(match.group(1).strip() for match in MD_AUTOLINK_RE.finditer(text))
@@ -292,6 +301,7 @@ def check_built_site_internal(
             findings.append(f"built site missing page for {page_path}")
             continue
 
+        file_label = display_path(file_path, root)
         html_text = file_path.read_text(encoding="utf-8")
         parser = HrefParser()
         parser.feed(html_text)
@@ -301,12 +311,12 @@ def check_built_site_internal(
         expected_canonical = public_url(site, page_path)
         if len(parser.canonical_hrefs) != 1:
             findings.append(
-                f"{file_path.relative_to(root)}: expected exactly one canonical link, "
+                f"{file_label}: expected exactly one canonical link, "
                 f"found {len(parser.canonical_hrefs)}"
             )
         elif parser.canonical_hrefs[0] != expected_canonical:
             findings.append(
-                f"{file_path.relative_to(root)}: canonical "
+                f"{file_label}: canonical "
                 f"{parser.canonical_hrefs[0]!r} does not match {expected_canonical!r}"
             )
 
@@ -324,7 +334,7 @@ def check_built_site_internal(
                 target = site_path_to_file(site_dir, "", stripped)
             if target is None:
                 findings.append(
-                    f"{file_path.relative_to(root)}: broken internal link {href} "
+                    f"{file_label}: broken internal link {href} "
                     f"(page {page_path})"
                 )
 
