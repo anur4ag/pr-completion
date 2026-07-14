@@ -272,6 +272,8 @@ class PortalPackageValidationTests(unittest.TestCase):
             raise
         meta = submission.validate_portal_package(members)
         self.assertEqual(meta["version"], submission.RELEASE_VERSION)
+        content_fp = submission.members_content_sha256(members)
+        self.assertEqual(content_fp, submission.RELEASE_PLUGIN_CONTENT_SHA256)
         with tempfile.TemporaryDirectory(prefix="openai-tagged-") as temporary:
             out = Path(temporary) / "portal.zip"
             digest = submission.build_portal_plugin_zip(
@@ -281,7 +283,13 @@ class PortalPackageValidationTests(unittest.TestCase):
             )
             self.assertEqual(len(digest), 64)
             self.assertTrue(submission.RELEASE_PLUGIN_SHA256)
-            self.assertEqual(digest, submission.RELEASE_PLUGIN_SHA256)
+            # ZIP bytes match the ubuntu-published pin when zlib agrees; always
+            # require the platform-independent content pin.
+            if digest != submission.RELEASE_PLUGIN_SHA256:
+                self.assertEqual(
+                    submission.members_content_sha256(members),
+                    submission.RELEASE_PLUGIN_CONTENT_SHA256,
+                )
             # Full package_submission default path (tag) also succeeds.
             full = submission.package_submission(
                 ROOT,
@@ -289,7 +297,13 @@ class PortalPackageValidationTests(unittest.TestCase):
                 probe_urls=False,
                 from_working_tree=False,
             )
-            self.assertEqual(full["portal_sha256"], submission.RELEASE_PLUGIN_SHA256)
+            self.assertEqual(len(full["portal_sha256"]), 64)
+            self.assertEqual(
+                submission.members_content_sha256(
+                    submission.load_tagged_files(ROOT)
+                ),
+                submission.RELEASE_PLUGIN_CONTENT_SHA256,
+            )
 
 
 class ListingPinNegativeTests(unittest.TestCase):
@@ -362,8 +376,10 @@ class ImmutableTagDriftNegativeTests(unittest.TestCase):
                 b'{"name":"pr-completion","version":"0.1.1"}\n',
             ),
         }
-        original = submission.RELEASE_PLUGIN_SHA256
+        original_zip = submission.RELEASE_PLUGIN_SHA256
+        original_content = submission.RELEASE_PLUGIN_CONTENT_SHA256
         submission.RELEASE_PLUGIN_SHA256 = "a" * 64
+        submission.RELEASE_PLUGIN_CONTENT_SHA256 = "b" * 64
         try:
             with tempfile.TemporaryDirectory(prefix="openai-checksum-neg-") as temporary:
                 out = Path(temporary) / "portal.zip"
@@ -373,9 +389,11 @@ class ImmutableTagDriftNegativeTests(unittest.TestCase):
                         members,
                         enforce_published_checksum=True,
                     )
-                self.assertIn("does not match published pin", str(ctx.exception))
+                message = str(ctx.exception)
+                self.assertIn("does not match published pins", message)
         finally:
-            submission.RELEASE_PLUGIN_SHA256 = original
+            submission.RELEASE_PLUGIN_SHA256 = original_zip
+            submission.RELEASE_PLUGIN_CONTENT_SHA256 = original_content
 
 
 if __name__ == "__main__":

@@ -46,7 +46,14 @@ RELEASE_REF = "v0.1.1"
 # Filled after tag + release publish. Empty string means "resolve from tag /
 # working tree and skip published-checksum pin until set".
 RELEASE_COMMIT = "52b2f8b710a20389237204092bbe67dd65ed89e8"
+# Published GitHub Release plugin ZIP bytes (produced on ubuntu-latest release job).
 RELEASE_PLUGIN_SHA256 = "3811207f95feda2d79bc3995f316411ed32e5f7bcad139863ec70c94735af02c"
+# Platform-independent fingerprint of sorted (path, mode, content) members of
+# that same package. ZIP container bytes can differ across zlib/platform even
+# when member payloads are identical; content pin covers that case.
+RELEASE_PLUGIN_CONTENT_SHA256 = (
+    "39fa994d3cebddbcffde2a7ebdf1ea669a1f0880cc362d0f4ce8d3cdfa8fa989"
+)
 
 PORTAL_ARCHIVE_ROOT = f"pr-completion-{RELEASE_VERSION}"
 MATERIALS_ARCHIVE_ROOT = f"pr-completion-{RELEASE_VERSION}-openai-materials"
@@ -266,6 +273,18 @@ def _write_zip(path: Path, members: list[tuple[str, int, bytes]]) -> None:
             archive.writestr(info, data, compress_type=zipfile.ZIP_DEFLATED)
 
 
+def members_content_sha256(members: dict[str, tuple[int, bytes]]) -> str:
+    """Stable fingerprint of package members independent of ZIP container bytes."""
+    digest = hashlib.sha256()
+    for relative in sorted(members):
+        mode, data = members[relative]
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(struct.pack(">I", int(mode)))
+        digest.update(hashlib.sha256(data).digest())
+    return digest.hexdigest()
+
+
 def build_portal_plugin_zip(
     out_path: Path,
     members: dict[str, tuple[int, bytes]],
@@ -278,6 +297,10 @@ def build_portal_plugin_zip(
     (the default packaging path). Working-tree builds compare against a
     contemporaneous ``package-release`` output instead and must not demand the
     tagged release pin when ``main`` has moved past the tag.
+
+    Published ZIP byte pin is preferred (matches ubuntu release artifacts).
+    If the local ZIP bytes differ (zlib/platform variance) but the logical
+    member fingerprint matches ``RELEASE_PLUGIN_CONTENT_SHA256``, accept.
     """
     ordered = sorted(members)
     zip_members = [
@@ -286,17 +309,26 @@ def build_portal_plugin_zip(
     ]
     _write_zip(out_path, zip_members)
     digest = sha256_file(out_path)
-    if (
-        enforce_published_checksum
-        and RELEASE_PLUGIN_SHA256
-        and digest != RELEASE_PLUGIN_SHA256
-    ):
-        out_path.unlink(missing_ok=True)
-        raise SubmissionError(
-            f"reconstructed portal plugin checksum {digest} does not match "
-            f"published pin {RELEASE_PLUGIN_SHA256}"
-        )
-    return digest
+    if not enforce_published_checksum:
+        return digest
+    if not RELEASE_PLUGIN_SHA256 and not RELEASE_PLUGIN_CONTENT_SHA256:
+        return digest
+
+    content_digest = members_content_sha256(members)
+    zip_ok = bool(RELEASE_PLUGIN_SHA256) and digest == RELEASE_PLUGIN_SHA256
+    content_ok = (
+        bool(RELEASE_PLUGIN_CONTENT_SHA256)
+        and content_digest == RELEASE_PLUGIN_CONTENT_SHA256
+    )
+    if zip_ok or content_ok:
+        return digest
+
+    out_path.unlink(missing_ok=True)
+    raise SubmissionError(
+        "reconstructed portal plugin does not match published pins: "
+        f"zip={digest} (want {RELEASE_PLUGIN_SHA256 or 'unset'}), "
+        f"content={content_digest} (want {RELEASE_PLUGIN_CONTENT_SHA256 or 'unset'})"
+    )
 
 
 def validate_png_bytes(data: bytes, *, label: str) -> dict[str, int]:

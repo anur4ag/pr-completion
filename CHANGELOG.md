@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- OpenAI packager: published checksum enforcement applies only to immutable-tag reconstruction; `--from-working-tree` compares only against contemporaneous `package-release` output.
+- OpenAI packager: published checksum enforcement applies only to immutable-tag reconstruction; `--from-working-tree` compares only against contemporaneous `package-release` output. Tag path accepts either the ubuntu ZIP pin or a platform-independent member content fingerprint (Windows zlib ZIP bytes may differ).
 - Listing `source.commit` must equal pinned `RELEASE_COMMIT` exactly when that pin is set (empty and wrong values fail).
 - Hosted CI fetches full history and tags so immutable `v0.1.1` reconstruction runs deterministically (no silent skip).
 
