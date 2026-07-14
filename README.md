@@ -132,9 +132,9 @@ Auto-merge that another actor already enabled may be observed and reported only.
 - GitHub access uses your existing `gh` authentication; GitHub remains operated by GitHub, not by this publisher.
 - License: [MIT](LICENSE)
 
-Planned legal and support pages (source lives under `docs/`; live hosting is ticket-5 verification):
+Public legal and support pages:
 
-| Page | Planned URL |
+| Page | URL |
 | --- | --- |
 | Site home | `https://anur4ag.github.io/pr-completion/` |
 | Support | `https://anur4ag.github.io/pr-completion/support/` |

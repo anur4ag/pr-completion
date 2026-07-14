@@ -73,7 +73,6 @@ The plugin is a developer tool and is not directed at children.
 ## Changes
 
 Material changes to this statement will be reflected in the repository documentation for the affected version.
-The planned public URL for this page is `https://anur4ag.github.io/pr-completion/privacy/` once GitHub Pages hosting is enabled and verified.
 
 ## Contact
 

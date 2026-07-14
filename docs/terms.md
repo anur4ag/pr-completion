@@ -59,11 +59,3 @@ To the maximum extent permitted by law, the authors and copyright holders are no
 
 Terms may be updated in source control for future versions.
 Continued use of a newer version constitutes acceptance of the terms shipped with that version.
-
-## Planned public URL
-
-Once GitHub Pages is enabled and verified, this page is intended to be available at:
-
-`https://anur4ag.github.io/pr-completion/terms/`
-
-Until that verification completes, treat the repository file `docs/terms.md` as the source of truth.

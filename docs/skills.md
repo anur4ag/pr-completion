@@ -106,6 +106,19 @@ Enforced invariants:
 5. Background watcher execution is not completion until the agent consumes final JSON.
 6. Unrelated dirty changes, missing credentials, and non-derivable product decisions escalate rather than invent authority.
 
+### Watcher states
+
+| State | Meaning | Agent response |
+| --- | --- | --- |
+| `pending` | A required gate is still running or GitHub state has not stabilized. | Wait, then observe again. |
+| `actionable` | CI, reviews, conflicts, or a required base update need work. | Dispatch the matching sibling skill, then re-observe. |
+| `ready` | Current-head checks, approvals, threads, and mergeability satisfy the readiness contract. | Stop and report evidence; do not merge. |
+| `auto_merge` | Another actor already enabled auto-merge. | Stop and report the external setting; do not change it. |
+| `merged` | GitHub reports the PR already merged. | Stop and report the terminal state. |
+| `blocked` | Progress needs authority, credentials, or a decision the workflow cannot derive. | Stop with evidence and the specific unblock requirement. |
+
+`pending`, `actionable`, `ready`, `auto_merge`, and `merged` are successful observations at the process level; the emitted JSON `state` remains the machine contract. `blocked` uses a non-zero exit status.
+
 ## Why the boundary is strict
 
 GitHub does not expose an atomic precondition that guarantees enabling auto-merge cannot race with a final required check and merge immediately.

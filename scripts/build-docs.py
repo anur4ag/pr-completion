@@ -151,7 +151,10 @@ def markdown_to_html(text: str) -> str:
         if heading:
             close_paragraph()
             level = len(heading.group(1))
-            out.append(f"<h{level}>{inline_md(heading.group(2))}</h{level}>")
+            heading_text = heading.group(2)
+            heading_id = re.sub(r"[^a-z0-9]+", "-", heading_text.lower()).strip("-")
+            id_attr = f' id="{html.escape(heading_id, quote=True)}"' if heading_id else ""
+            out.append(f"<h{level}{id_attr}>{inline_md(heading_text)}</h{level}>")
             index += 1
             continue
 
@@ -222,7 +225,7 @@ def rewrite_repo_links(content_html: str, base_url: str) -> str:
     # ../SECURITY.md and ../LICENSE appear in docs; on the site, point at GitHub raw-ish blob URLs
     # via relative repo links is not available on Pages. Keep anchors as GitHub repository links
     # when the site is served, by rewriting only known legal/support files to repository paths
-    # using a data attribute style absolute planned repo path. For the static site, emit absolute
+    # using a data attribute style absolute repository path. For the static site, emit absolute
     # GitHub URLs only for those parent-relative files so link checks remain explicit.
     replacements = {
         'href="../SECURITY.md"': 'href="https://github.com/anur4ag/pr-completion/blob/main/SECURITY.md"',
@@ -268,20 +271,24 @@ def render_page(
     title = f'{page["title"]} · {site["title"]}'
     description = html.escape(str(site.get("description") or ""))
     nav_parts: list[str] = []
-    for item in site.get("nav") or []:
+    for index, item in enumerate(site.get("nav") or [], start=1):
         href = join_url(base_url, item["path"])
         current = ' aria-current="page"' if item["path"] == page["path"] else ""
         nav_parts.append(
-            f'<a href="{html.escape(href, quote=True)}"{current}>{html.escape(item["label"])}</a>'
+            f'<a href="{html.escape(href, quote=True)}"{current}>'
+            f'<span aria-hidden="true">{index:02d}</span>{html.escape(item["label"])}</a>'
         )
     nav_html = "\n".join(nav_parts)
     css_href = join_url(base_url, "/assets/site.css")
     home_href = join_url(base_url, "/")
     repo = html.escape(str(site.get("repository") or ""), quote=True)
-    planned = html.escape(
-        f'{site.get("planned_origin", "").rstrip("/")}{join_url(base_url, page["path"])}',
+    release = html.escape(str(site.get("release") or ""), quote=True)
+    public_origin = str(site.get("public_origin") or site.get("planned_origin") or "").rstrip("/")
+    canonical = html.escape(
+        f'{public_origin}{join_url(base_url, page["path"])}',
         quote=True,
     )
+    page_key = Path(str(page["source"])).stem.replace("_", "-")
     body_html = rewrite_repo_links(body_html, base_url)
 
     return f"""<!DOCTYPE html>
@@ -292,29 +299,46 @@ def render_page(
   <title>{html.escape(title)}</title>
   <meta name="description" content="{description}">
   <meta name="generator" content="pr-completion docs builder">
+  <meta name="theme-color" content="#f3f0e5">
+  <link rel="canonical" href="{canonical}">
   <link rel="stylesheet" href="{html.escape(css_href, quote=True)}">
 </head>
 <body>
-  <div class="wrap">
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <div class="site-frame">
     <header class="site-header">
-      <a class="brand" href="{html.escape(home_href, quote=True)}">PR Completion<span>v{html.escape(version)}</span></a>
-      <nav class="site-nav">
+      <div class="utility-bar">
+        <span>PR completion / operator manual</span>
+        <span>Docs v{html.escape(version)} · Local plugin</span>
+      </div>
+      <div class="masthead">
+        <a class="brand" href="{html.escape(home_href, quote=True)}">
+          <span class="brand-mark" aria-hidden="true">PR/C</span>
+          <span class="brand-copy">PR Completion<small>Merge-ready automation</small></span>
+        </a>
+        <a class="repo-link" href="{repo}">Source / GitHub <span aria-hidden="true">↗</span></a>
+      </div>
+      <nav class="site-nav" aria-label="Primary navigation">
         {nav_html}
       </nav>
     </header>
-    <main>
+    <main id="main-content" class="document page-{html.escape(page_key, quote=True)}">
       {body_html}
     </main>
     <footer class="site-footer">
-      <p>
-        MIT-licensed local plugin by
-        <a href="{html.escape(str(site.get("publisher_url") or ""), quote=True)}">{html.escape(str(site.get("publisher_name") or ""))}</a>.
-        Source: <a href="{repo}">{repo}</a>.
-      </p>
-      <p class="muted">
-        Planned public URL for this page: <code>{planned}</code>
-        (live hosting is verified separately; this build does not claim the origin is online).
-      </p>
+      <div class="footer-stamp"><span>PR/C</span><strong>Stop at ready.</strong></div>
+      <div>
+        <p class="footer-label">Project</p>
+        <a href="{repo}">Repository</a>
+        <a href="{release}">Current release</a>
+      </div>
+      <div>
+        <p class="footer-label">Reference</p>
+        <a href="{join_url(base_url, '/support/')}">Support</a>
+        <a href="{join_url(base_url, '/privacy/')}">Privacy</a>
+        <a href="{join_url(base_url, '/terms/')}">Terms</a>
+      </div>
+      <p class="footer-note">MIT-licensed local plugin by <a href="{html.escape(str(site.get('publisher_url') or ''), quote=True)}">{html.escape(str(site.get('publisher_name') or ''))}</a>.<br>Documentation for v{html.escape(version)}.</p>
     </footer>
   </div>
 </body>
@@ -365,7 +389,7 @@ def build(root: Path, site_dir: Path) -> int:
             {
                 "version": version,
                 "base_url": site.get("base_url"),
-                "planned_origin": site.get("planned_origin"),
+                "public_origin": site.get("public_origin") or site.get("planned_origin"),
                 "page_count": len(pages),
             },
             indent=2,

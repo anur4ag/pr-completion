@@ -4,13 +4,9 @@
 Two distinct phases (never conflate them in output):
 
 1. **Internal checks** - repository-relative links, built-site routes, and
-   manifest/planned-route consistency. These do not require the public origin.
-2. **External HTTP checks** - bounded live HEAD/GET for public http(s) links
-   that are not on the exact planned-not-live allowlist (ticket-5 URLs).
-
-Planned publication URLs are allowlisted by **exact string match** so they are
-skipped until ticket 5 verifies live hosting. Prefix matching is intentionally
-not used for that allowlist.
+   manifest/public-route consistency. These do not require network access.
+2. **External HTTP checks** - bounded live HEAD/GET for every public http(s)
+   link referenced by the source or generated site.
 """
 
 from __future__ import annotations
@@ -30,27 +26,6 @@ from urllib.parse import unquote, urldefrag, urlparse
 HREF_RE = re.compile(r"""(?:href|src)=["']([^"']+)["']""", re.IGNORECASE)
 MD_LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)]+)\)")
 MD_AUTOLINK_RE = re.compile(r"<(https?://[^>]+)>")
-
-# Exact planned-not-live URLs (ticket 5). Do not use prefix matching here.
-DEFAULT_PLANNED_NOT_LIVE_URLS = frozenset(
-    {
-        "https://anur4ag.github.io/pr-completion/",
-        "https://anur4ag.github.io/pr-completion/installation/",
-        "https://anur4ag.github.io/pr-completion/skills/",
-        "https://anur4ag.github.io/pr-completion/support/",
-        "https://anur4ag.github.io/pr-completion/privacy/",
-        "https://anur4ag.github.io/pr-completion/terms/",
-        "https://github.com/anur4ag/pr-completion",
-        "https://github.com/anur4ag/pr-completion/issues",
-        "https://github.com/anur4ag/pr-completion/security/advisories/new",
-        "https://github.com/anur4ag/pr-completion/blob/main/SECURITY.md",
-        "https://github.com/anur4ag/pr-completion/blob/main/LICENSE",
-        "https://github.com/anur4ag/pr-completion/releases/tag/v0.1.0",
-        "https://github.com/anur4ag/pr-completion/compare/v0.1.0...HEAD",
-        "https://github.com/anur4ag/pr-completion/releases/tag/v0.1.1",
-        "https://github.com/anur4ag/pr-completion/compare/v0.1.1...HEAD",
-    }
-)
 
 USER_AGENT = "pr-completion-docs-link-check/0.1 (+local validation; bounded)"
 DEFAULT_TIMEOUT_SECONDS = 8.0
@@ -103,8 +78,8 @@ def join_url(base_url: str, path: str) -> str:
     return f"{base}{path}"
 
 
-def planned_public_url(site: dict, path: str) -> str:
-    origin = str(site.get("planned_origin") or "").rstrip("/")
+def public_url(site: dict, path: str) -> str:
+    origin = str(site.get("public_origin") or site.get("planned_origin") or "").rstrip("/")
     return f"{origin}{join_url(str(site.get('base_url') or ''), path)}"
 
 
@@ -119,19 +94,9 @@ def is_skip_scheme(url: str) -> bool:
 
 
 def normalize_href(url: str) -> str:
-    """Strip fragments for allowlist and HTTP checks; keep query string."""
+    """Strip fragments for HTTP checks; keep query string."""
     cleaned, _fragment = urldefrag(url.strip())
     return cleaned
-
-
-def site_planned_urls(site: dict) -> set[str]:
-    urls = set(DEFAULT_PLANNED_NOT_LIVE_URLS)
-    for page in site.get("pages") or []:
-        path = page.get("path")
-        if isinstance(path, str):
-            urls.add(planned_public_url(site, path))
-    urls.add(planned_public_url(site, "/"))
-    return urls
 
 
 def normalize_site_path(base_url: str, href: str, current_page_path: str) -> str | None:
@@ -242,9 +207,9 @@ def collect_all_hrefs(root: Path, site_dir: Path | None) -> list[tuple[str, str]
 
 
 def check_manifest_urls(root: Path, site: dict, findings: list[str]) -> None:
-    expected_home = planned_public_url(site, "/")
-    expected_privacy = planned_public_url(site, "/privacy/")
-    expected_terms = planned_public_url(site, "/terms/")
+    expected_home = public_url(site, "/")
+    expected_privacy = public_url(site, "/privacy/")
+    expected_terms = public_url(site, "/terms/")
 
     claude = load_json(root / ".claude-plugin" / "plugin.json")
     codex = load_json(root / ".codex-plugin" / "plugin.json")
@@ -256,7 +221,7 @@ def check_manifest_urls(root: Path, site: dict, findings: list[str]) -> None:
         homepage = payload.get("homepage")
         if homepage != expected_home:
             findings.append(
-                f"{label} homepage {homepage!r} does not match planned site {expected_home!r}"
+                f"{label} homepage {homepage!r} does not match public site {expected_home!r}"
             )
 
     interface = codex.get("interface")
@@ -273,7 +238,7 @@ def check_manifest_urls(root: Path, site: dict, findings: list[str]) -> None:
         if value != expected:
             findings.append(
                 f".codex-plugin/plugin.json interface.{field} {value!r} "
-                f"does not match planned {expected!r}"
+                f"does not match public {expected!r}"
             )
 
     support_paths = {page.get("path") for page in site.get("pages") or []}
@@ -396,15 +361,14 @@ def probe_url(url: str, timeout: float) -> tuple[str, str | None]:
 def check_external_http_links(
     *,
     hrefs: list[tuple[str, str]],
-    planned_not_live: set[str],
     extra_urls: list[str],
     timeout: float,
     max_workers: int,
     findings: list[str],
-) -> tuple[int, int, int]:
+) -> tuple[int, int]:
     """Validate external http(s) links.
 
-    Returns (checked_count, allowlisted_skip_count, unique_external_count).
+    Returns (checked_count, unique_external_count).
     """
     # Map normalized URL -> sources that referenced it.
     sources: dict[str, set[str]] = {}
@@ -420,16 +384,10 @@ def check_external_http_links(
     for url in extra_urls:
         add(url, "<injected>")
 
-    allowlisted = 0
-    to_check: list[str] = []
-    for url in sorted(sources):
-        if url in planned_not_live:
-            allowlisted += 1
-            continue
-        to_check.append(url)
+    to_check = sorted(sources)
 
     if not to_check:
-        return 0, allowlisted, len(sources)
+        return 0, len(sources)
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = {pool.submit(probe_url, url, timeout): url for url in to_check}
@@ -439,7 +397,7 @@ def check_external_http_links(
                 where = ", ".join(sorted(sources.get(url, {"?"})))
                 findings.append(f"external HTTP failed for {url} ({error}); sources: {where}")
 
-    return len(to_check), allowlisted, len(sources)
+    return len(to_check), len(sources)
 
 
 def run_internal_checks(
@@ -492,18 +450,15 @@ def main(argv: list[str] | None = None) -> int:
     root = args.root.resolve() if args.root else plugin_root_from(Path(__file__))
     site_dir = args.site_dir.resolve() if args.site_dir else root / "docs" / "_site"
     site = load_json(root / "docs" / "site.json")
-    planned = site_planned_urls(site)
-
     internal_findings: list[str] = []
     run_internal_checks(root, site, site_dir, internal_findings)
 
     external_findings: list[str] = []
-    checked = allowlisted = unique_external = 0
+    checked = unique_external = 0
     if not args.skip_external:
         hrefs = collect_all_hrefs(root, site_dir)
-        checked, allowlisted, unique_external = check_external_http_links(
+        checked, unique_external = check_external_http_links(
             hrefs=hrefs,
-            planned_not_live=planned,
             extra_urls=list(args.extra_url or []),
             timeout=args.timeout,
             max_workers=max(1, args.max_workers),
@@ -518,10 +473,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  - {item}", file=sys.stderr)
     else:
         print("internal docs link check passed")
-        print(f"  planned home (config only): {planned_public_url(site, '/')}")
-        print(f"  planned support (config only): {planned_public_url(site, '/support/')}")
-        print(f"  planned privacy (config only): {planned_public_url(site, '/privacy/')}")
-        print(f"  planned terms (config only): {planned_public_url(site, '/terms/')}")
+        print(f"  public home: {public_url(site, '/')}")
+        print(f"  public support: {public_url(site, '/support/')}")
+        print(f"  public privacy: {public_url(site, '/privacy/')}")
+        print(f"  public terms: {public_url(site, '/terms/')}")
 
     if args.skip_external:
         print("external HTTP link check skipped (--skip-external); not externally validated")
@@ -531,19 +486,13 @@ def main(argv: list[str] | None = None) -> int:
         for item in external_findings:
             print(f"  - {item}", file=sys.stderr)
         print(
-            f"external HTTP summary: checked={checked} "
-            f"allowlisted_planned_not_live={allowlisted} unique_http={unique_external}",
+            f"external HTTP summary: checked={checked} unique_http={unique_external}",
             file=sys.stderr,
         )
     else:
         print("external HTTP link check passed")
         print(
-            f"  checked={checked} allowlisted_planned_not_live={allowlisted} "
-            f"unique_http={unique_external}"
-        )
-        print(
-            f"  exact planned-not-live allowlist size={len(planned)} "
-            "(skipped; not treated as live)"
+            f"  checked={checked} unique_http={unique_external}"
         )
 
     return 1 if failed else 0
