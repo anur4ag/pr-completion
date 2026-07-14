@@ -48,25 +48,24 @@ from pathlib import Path
 from typing import Any
 
 
-RELEASE_VERSION = "0.1.1"
-RELEASE_REF = "v0.1.1"
+RELEASE_VERSION = "0.1.2"
+RELEASE_REF = "v0.1.2"
 # Filled after tag + release publish. Empty string means "resolve from tag /
 # working tree and skip published-checksum pin until set".
-RELEASE_COMMIT = "52b2f8b710a20389237204092bbe67dd65ed89e8"
+RELEASE_COMMIT = "f65ac4a4ae781efe4b256bd074082bf72c4b456d"
 # Published GitHub Release installable plugin ZIP bytes.
 RELEASE_INSTALLABLE_SHA256 = (
-    "3811207f95feda2d79bc3995f316411ed32e5f7bcad139863ec70c94735af02c"
+    "64eb64e880e0bb38753a3f818a076bc2bb7f017b7d2ac5a9f5a6f864949d4167"
 )
-# Published portal-upload ZIP bytes. v0.1.1 reused the full installable ZIP;
-# v0.1.2 and later publish a distinct minimal portal asset.
+# Published minimal portal-upload ZIP bytes.
 RELEASE_PORTAL_SHA256 = (
-    "3811207f95feda2d79bc3995f316411ed32e5f7bcad139863ec70c94735af02c"
+    "4e000342b813bfcb6d92851b81612df749d6de8a388efbad6fa60bdbdbc1344f"
 )
 # Platform-independent fingerprint of sorted (path, mode, content) members of
 # that same package. ZIP container bytes can differ across zlib/platform even
 # when member payloads are identical; content pin covers that case.
 RELEASE_PLUGIN_CONTENT_SHA256 = (
-    "39fa994d3cebddbcffde2a7ebdf1ea669a1f0880cc362d0f4ce8d3cdfa8fa989"
+    "73e2ed29526387c1d5c77a00524e7b2b2f30f4091ccdc1894ae154d525578ede"
 )
 
 ZIP_DATE_TIME = (1980, 1, 1, 0, 0, 0)
@@ -820,7 +819,7 @@ def check_urls(urls: list[str]) -> list[dict[str, Any]]:
     for url in urls:
         request = urllib.request.Request(
             url,
-            headers={"User-Agent": "pr-completion-openai-submission-validator/0.1.1"},
+            headers={"User-Agent": "pr-completion-openai-submission-validator/0.1.2"},
         )
         try:
             with urllib.request.urlopen(request, timeout=20) as response:

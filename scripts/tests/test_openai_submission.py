@@ -521,10 +521,13 @@ class ImmutableTagDriftNegativeTests(unittest.TestCase):
 
     def test_content_pin_mismatch_is_rejected_on_tag_path(self) -> None:
         members = {
-            "VERSION": (0o644, b"0.1.1\n"),
+            "VERSION": (0o644, f"{submission.RELEASE_VERSION}\n".encode()),
             ".codex-plugin/plugin.json": (
                 0o644,
-                b'{"name":"pr-completion","version":"0.1.1"}\n',
+                (
+                    '{"name":"pr-completion","version":"'
+                    f'{submission.RELEASE_VERSION}"}}\n'
+                ).encode(),
             ),
         }
         original_content = submission.RELEASE_PLUGIN_CONTENT_SHA256

@@ -22,7 +22,7 @@ Portal upload compatibility patch.
   - Hosted `release-integrity` downloads immutable published assets and independently checks the full installable ZIP (`RELEASE_INSTALLABLE_SHA256`) and the portal-upload ZIP (`RELEASE_PORTAL_SHA256`). Content fingerprint alone cannot satisfy either byte gate.
   - `--from-working-tree` compares only against contemporaneous `package-release` output (no published ZIP pin).
 - Listing `source.commit` must equal pinned `RELEASE_COMMIT` exactly when that pin is set (empty and wrong values fail).
-- Hosted CI fetches full history and tags so immutable `v0.1.1` reconstruction runs deterministically (no silent skip).
+- Hosted CI fetches full history and tags so immutable current-release reconstruction runs deterministically (no silent skip).
 
 ### Documentation
 
