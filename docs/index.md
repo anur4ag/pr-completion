@@ -1,29 +1,16 @@
 # PR Completion
 
-Local skills plugin that takes a GitHub pull request to **verified merge readiness** for Claude Code and Codex.
+A local skills plugin for Claude Code and Codex that prepares a GitHub pull request, watches its gates, repairs actionable failures, and stops at verified merge readiness.
 
-It validates and commits workspace changes, watches CI and reviews, triages feedback, and resolves conflicts. It stops when the current head is merge-ready. It never merges, enables auto-merge, joins a merge queue, force-pushes, or bypasses branch protections.
+It can validate and commit workspace changes, push in-scope commits, monitor CI and reviews, triage feedback, and resolve conflicts. Its terminal report describes the current head; it does not perform the merge.
 
 <div class="callout">
 
-**Publication status.** These pages are built from repository source so install, safety, and legal copy can be reviewed before hosting is enabled.
-Planned public origin: `https://anur4ag.github.io/pr-completion/`.
-Do not treat that origin as live until ticket 5 verifies Pages and anonymous install paths.
+**Safety boundary.** Success means the current PR head is merge-ready. PR Completion never merges, enables or disables auto-merge, enters a merge queue, force-pushes, or bypasses branch protection. Auto-merge enabled by another actor is observed and reported only.
 
 </div>
 
-## What you get
-
-| Skill | Role |
-| --- | --- |
-| `take-pr-to-completion` | Orchestrator. Drives the PR lifecycle and stops at merge-ready. |
-| `commit-workspace-changes` | Discovers task-related changes, runs checks, creates local commits. |
-| `gh-review-comment-triage` | Verifies review threads against current code and resolves with evidence. |
-| `merge-conflict-resolution` | Resolves Git conflicts by preserving combined intent. |
-
-All four skills ship from one shared `skills/` tree. Claude and Codex manifests point at that tree; skill implementations are not forked per harness.
-
-## Quick install
+## Install
 
 Claude Code:
 
@@ -39,44 +26,52 @@ codex plugin marketplace add anur4ag/pr-completion
 codex plugin add pr-completion@pr-completion
 ```
 
-Full pin, update, uninstall, and troubleshooting steps: [Installation](installation.md).
+See [Installation](installation.md) for version pinning, updates, local development installs, and troubleshooting.
 
-## Prerequisites
+## Four sibling skills
 
-- Python **3.10+**
-- Git
-- Authenticated GitHub CLI (`gh`)
-- Project-specific build/lint/test tools for the repositories you touch
-- Claude Code **2.1.207+** or Codex CLI **0.144.3+** (local compatibility floors; not yet multi-OS publication-verified)
-
-### Platform support status
-
-| Platform | Status |
+| Skill | Run it when |
 | --- | --- |
-| macOS | Locally verified during package development |
-| Linux | Target support pending green public hosted CI |
-| Windows | Target support pending green public hosted CI |
+| `take-pr-to-completion` | You want the full commit, watch, review, and conflict loop to continue until the PR is ready or blocked. |
+| `commit-workspace-changes` | Local task changes need to be discovered, checked, and committed across repositories or submodules. |
+| `gh-review-comment-triage` | Review threads need to be checked against current code, fixed when real, and resolved with evidence. |
+| `merge-conflict-resolution` | A merge, rebase, cherry-pick, or revert is conflicted and both sides' intent must be preserved. |
 
-Three-OS and floor-version claims become publication-verified only when ticket 5 records successful hosted jobs.
+All four ship from one shared `skills/` tree. Claude Code and Codex load the same implementations.
 
-## Safety in one line
+## Deterministic watcher
 
-**Terminal success = verified merge-ready head, not a merged PR.**
+The orchestrator repeatedly observes the PR and emits one machine-readable state:
 
-See [Skills and safety](skills.md) for skill authority and the full mutation boundary.
+```text
+pending -> actionable -> repair -> new head -> re-observe
+                         |
+                         +-> ready | auto_merge | merged | blocked
+```
 
-## Privacy, terms, support
+Every push invalidates the previous observation. `ready` is calculated again for the new head from required checks, current approvals, unresolved review threads, and mergeability. `auto_merge` means another actor already enabled it; the plugin does not change that setting.
 
-- [Privacy](privacy.md) - local plugin code; harness/tool provider transmission; no publisher telemetry or backend
-- [Terms](terms.md) - MIT license and usage terms
-- [Support](support.md) - GitHub Issues and security reporting path
-- Repository security policy: [`SECURITY.md`](../SECURITY.md) in source
+## Requirements
 
-## Publisher
+| Requirement | Supported baseline |
+| --- | --- |
+| Python | 3.10+ |
+| Claude Code | 2.1.207+ |
+| Codex CLI | 0.144.3+ |
+| Local tools | Git and authenticated GitHub CLI (`gh`) |
+| Platforms | macOS, Linux, and Windows; hosted validation covers Python 3.10 and 3.14 plus floor/latest harness install smoke |
 
-- Marketplace / directory publisher identity: **Traycer** (portal label **Business — Traycer**)
-- GitHub repository owner: [anur4ag](https://github.com/anur4ag)
-- Canonical repository: [anur4ag/pr-completion](https://github.com/anur4ag/pr-completion)
-- License: MIT
+Target repositories must also have their own build, lint, test, and hook dependencies installed.
 
-Copyright attribution remains in the MIT `LICENSE` file. OpenAI portal submission under the verified business identity is a separate external step and is not claimed complete on these pages.
+## Project reference
+
+- [Repository](https://github.com/anur4ag/pr-completion)
+- [Release v0.1.1](https://github.com/anur4ag/pr-completion/releases/tag/v0.1.1)
+- [Skills and safety](skills.md)
+- [Support](support.md)
+- [Privacy](privacy.md)
+- [Terms](terms.md)
+- [MIT License](../LICENSE)
+- [Security policy](../SECURITY.md)
+
+Publisher identity: **Traycer**. Repository owner: [anur4ag](https://github.com/anur4ag).

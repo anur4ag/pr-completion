@@ -1,6 +1,5 @@
 # Build, link-check, and deploy the documentation site to GitHub Pages.
 #
-# Deploy succeeds only after Pages is enabled on the repository (ticket 5).
 # This workflow intentionally does not create remotes, tags, or releases.
 name: pages
 
