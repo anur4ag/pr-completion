@@ -10,12 +10,12 @@ Signed-off-by: Your Name <you@example.com>
 
 Use `git commit -s` (or an equivalent that adds a matching trailer). An unrelated signatory does not satisfy the check.
 
-### Enforcement (absolute for future work)
+### Enforcement (active repository governance)
 
-- Hosted workflow **dco** / check name **`signed-off-by`** validates the trailer and identity.
-- The active `main` branch ruleset requires that status check for changes to land on `main`.
-- There is **no** administrator bypass for this requirement. Direct pushes to `main` that lack a green `signed-off-by` check are not an intended workflow.
-- Land future work through a signed commit on a branch, open a pull request, wait for `signed-off-by` (and other required checks) to pass, then merge.
+- Hosted GitHub Actions workflow **dco** produces the check name **`signed-off-by`**, which validates the trailer and that at least one sign-off matches the commit author or committer.
+- While the active `main` ruleset configuration remains in force, that **GitHub Actions-produced** `signed-off-by` check is required for every actor (no bypass actors). Direct pushes to `main` are not an intended workflow.
+- Land future work through a signed commit on a branch, open a pull request, wait for `signed-off-by` (and other required checks) to pass, then merge with a method that preserves the signed commit (for example rebase merge). Do not squash into an unsigned generated merge commit.
+- This is repository-native governance, not an external DCO app. Repository owners can intentionally change settings or workflow source through a future governed change; enforcement is absolute only for the current active ruleset and Actions producer binding.
 
 ### One-time historical exception (immutable)
 

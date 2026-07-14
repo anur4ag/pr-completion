@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Documentation
 
 - Recorded a one-time DCO exception for exactly two immutable ancestors (`a93a5d7`, `4af89ae`) on the `v0.1.1` history.
-- Future commits require `Signed-off-by` matching author or committer; the `signed-off-by` status check is required on `main` with no admin bypass. Land changes via signed pull requests. No retag or history rewrite.
+- Future commits require `Signed-off-by` matching author or committer. While the active `main` ruleset remains configured, the GitHub Actions-produced `signed-off-by` check is required for every actor (no bypass). Land changes via signed pull requests that preserve signed commits. No retag or history rewrite.
 
 ## [0.1.1] - 2026-07-14
 
