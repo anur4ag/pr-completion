@@ -49,8 +49,8 @@ jobs:
       - name: Show interpreter
         run: |
           python -c "import platform,sys; print(sys.version); print(platform.platform())"
+          git rev-parse --verify "refs/tags/v0.2.0^{commit}"
           git rev-parse --verify "refs/tags/v0.1.2^{commit}"
-          git rev-parse --verify "refs/tags/v0.1.1^{commit}"
 
       - name: Canonical validation (no live install smoke)
         env:
