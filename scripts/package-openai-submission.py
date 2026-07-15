@@ -9,6 +9,8 @@ Portal evidence:
   3. v0.1.1 passed client-side manifest/icon checks but its 93-member,
      1,067,320-byte full-release upload failed generically.
   4. Verified portal identity is Business — Traycer.
+  5. Current Codex manifests support optional interface.logoDark metadata; this
+     package requires and ships it alongside the light logo.
 
 The authenticated upload artifact is therefore a minimal plugin package:
 the Codex manifest, runtime skill files, and referenced square assets under
@@ -292,6 +294,8 @@ def select_portal_members(
     for field in ("composerIcon", "logo"):
         relative = resolve_plugin_relative(interface.get(field))
         selected_paths.add(relative)
+    if "logoDark" in interface:
+        selected_paths.add(resolve_plugin_relative(interface.get("logoDark")))
 
     selected_paths.update(
         relative
@@ -516,7 +520,10 @@ def validate_portal_package(
             "interface.defaultPrompt must be a non-empty array of non-empty strings"
         )
     visuals = {}
-    for field in ("composerIcon", "logo"):
+    visual_fields = ["composerIcon", "logo"]
+    if "logoDark" in interface:
+        visual_fields.append("logoDark")
+    for field in visual_fields:
         if field not in interface:
             raise SubmissionError(
                 f".codex-plugin/plugin.json missing required interface.{field}"

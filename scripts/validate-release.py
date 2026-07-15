@@ -121,6 +121,7 @@ REQUIRED_FILE_GROUPS: dict[str, tuple[str, ...]] = {
         ".claude-plugin/marketplace.json",
         ".codex-plugin/plugin.json",
         "assets/traycer-icon.png",
+        "assets/traycer-icon-dark.png",
     ),
     "skills": (
         "skills/take-pr-to-completion/SKILL.md",
@@ -347,7 +348,7 @@ def check_publisher_metadata(root: Path, findings: list[str]) -> None:
 
 
 def check_codex_portal_visuals(root: Path, findings: list[str]) -> None:
-    """Portal requires square composerIcon and logo under the plugin root."""
+    """Portal requires square light/dark visual assets under the plugin root."""
     payload = load_json(root / ".codex-plugin" / "plugin.json", findings)
     if payload is None:
         return
@@ -375,7 +376,7 @@ def check_codex_portal_visuals(root: Path, findings: list[str]) -> None:
             ".codex-plugin/plugin.json: interface.defaultPrompt must be a "
             "non-empty array of non-empty strings"
         )
-    for field in ("composerIcon", "logo"):
+    for field in ("composerIcon", "logo", "logoDark"):
         value = interface.get(field)
         if not isinstance(value, str) or not value.startswith("./"):
             findings.append(

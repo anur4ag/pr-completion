@@ -4,7 +4,7 @@ Autonomous pull request preparation for [Claude Code](https://code.claude.com/) 
 
 Validate and commit local work, then drive a GitHub PR through CI, review triage, and conflict resolution until the current head is **verified merge-ready**. The public workflow never merges, enables auto-merge, joins a merge queue, force-pushes, or bypasses branch protections.
 
-> **Status.** Public dual-harness plugin at [`anur4ag/pr-completion`](https://github.com/anur4ag/pr-completion) (`VERSION` `0.2.0`).
+> **Status.** Public dual-harness plugin at [`anur4ag/pr-completion`](https://github.com/anur4ag/pr-completion) (`VERSION` `0.2.1`).
 > Docs: [https://anur4ag.github.io/pr-completion/](https://anur4ag.github.io/pr-completion/).
 > Directory publisher identity: **Business — Traycer**. OpenAI portal upload remains a user-controlled step and is not claimed submitted or approved here.
 
@@ -53,7 +53,7 @@ claude plugin install pr-completion@pr-completion --scope user
 Pin the marketplace to a release tag, then install:
 
 ```bash
-claude plugin marketplace add anur4ag/pr-completion@v0.2.0
+claude plugin marketplace add anur4ag/pr-completion@v0.2.1
 claude plugin install pr-completion@pr-completion --scope user
 ```
 
@@ -82,8 +82,8 @@ codex plugin add pr-completion@pr-completion
 Pin the marketplace to a release tag:
 
 ```bash
-codex plugin marketplace add anur4ag/pr-completion@v0.2.0
-# or: codex plugin marketplace add anur4ag/pr-completion --ref v0.2.0
+codex plugin marketplace add anur4ag/pr-completion@v0.2.1
+# or: codex plugin marketplace add anur4ag/pr-completion --ref v0.2.1
 codex plugin add pr-completion@pr-completion
 ```
 

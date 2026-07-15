@@ -114,10 +114,33 @@ class OpenAISubmissionMaterialTests(unittest.TestCase):
             "Business \u2014 Traycer",
         )
 
+    def test_current_manifest_declares_distinct_square_dark_logo(self) -> None:
+        manifest = json.loads(
+            (ROOT / ".codex-plugin/plugin.json").read_text(encoding="utf-8")
+        )
+        interface = manifest["interface"]
+        self.assertEqual(interface["composerIcon"], "./assets/traycer-icon.png")
+        self.assertEqual(interface["logo"], "./assets/traycer-icon.png")
+        self.assertEqual(
+            interface["logoDark"], "./assets/traycer-icon-dark.png"
+        )
+        light = (ROOT / "assets/traycer-icon.png").read_bytes()
+        dark = (ROOT / "assets/traycer-icon-dark.png").read_bytes()
+        self.assertNotEqual(light, dark)
+        self.assertEqual(
+            submission.validate_png_bytes(light, label="light logo"),
+            {"width": 1024, "height": 1024},
+        )
+        self.assertEqual(
+            submission.validate_png_bytes(dark, label="dark logo"),
+            {"width": 1024, "height": 1024},
+        )
+
 
 class PortalPackageValidationTests(unittest.TestCase):
     def _base_members(self) -> dict[str, tuple[int, bytes]]:
         icon = (ROOT / "assets/traycer-icon.png").read_bytes()
+        icon_dark = (ROOT / "assets/traycer-icon-dark.png").read_bytes()
         codex = {
             "name": "pr-completion",
             "version": CURRENT_VERSION,
@@ -126,6 +149,7 @@ class PortalPackageValidationTests(unittest.TestCase):
                 "developerName": "Traycer",
                 "composerIcon": "./assets/traycer-icon.png",
                 "logo": "./assets/traycer-icon.png",
+                "logoDark": "./assets/traycer-icon-dark.png",
                 "defaultPrompt": ["Use PR Completion for this pull request."],
             },
         }
@@ -135,6 +159,7 @@ class PortalPackageValidationTests(unittest.TestCase):
                 (json.dumps(codex, indent=2) + "\n").encode("utf-8"),
             ),
             "assets/traycer-icon.png": (0o644, icon),
+            "assets/traycer-icon-dark.png": (0o644, icon_dark),
             "skills/take-pr-to-completion/SKILL.md": (0o644, b"# skill\n"),
         }
 
@@ -190,7 +215,7 @@ class PortalPackageValidationTests(unittest.TestCase):
 
     def test_missing_referenced_asset_is_rejected(self) -> None:
         members = self._base_members()
-        del members["assets/traycer-icon.png"]
+        del members["assets/traycer-icon-dark.png"]
         with self.assertRaises(submission.SubmissionError) as ctx:
             submission.validate_portal_package(
                 members, expected_version=CURRENT_VERSION
@@ -267,6 +292,7 @@ class PortalPackageValidationTests(unittest.TestCase):
                 {
                     ".codex-plugin/plugin.json",
                     "assets/traycer-icon.png",
+                    "assets/traycer-icon-dark.png",
                     "skills/commit-workspace-changes/SKILL.md",
                     "skills/commit-workspace-changes/agents/openai.yaml",
                     "skills/gh-review-comment-triage/SKILL.md",
@@ -370,7 +396,7 @@ class PortalPackageValidationTests(unittest.TestCase):
             )
             self.assertTrue(portal.is_file())
             layout = submission.inspect_portal_zip_layout(portal)
-            self.assertEqual(layout["members"], 9)
+            self.assertEqual(layout["members"], 10)
 
     def test_portal_zip_over_one_mib_is_rejected_and_removed(self) -> None:
         members = {

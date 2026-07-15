@@ -143,6 +143,7 @@ class PackageReleaseDeterminismTests(unittest.TestCase):
             ".claude-plugin/marketplace.json",
             ".codex-plugin/plugin.json",
             "assets/traycer-icon.png",
+            "assets/traycer-icon-dark.png",
             "skills/take-pr-to-completion/SKILL.md",
             "skills/commit-workspace-changes/SKILL.md",
             "skills/gh-review-comment-triage/SKILL.md",
