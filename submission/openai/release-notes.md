@@ -1,14 +1,13 @@
-# PR Completion v0.2.0
+# PR Completion v0.2.1
 
-Autonomous watcher relaunch release under the verified **Business — Traycer** publisher identity.
+Light and dark logo refresh under the verified **Business — Traycer** publisher identity.
 
 ## Changes
 
-- Add a durable per-PR cursor that suppresses identical actionable observations across watcher relaunches.
-- Add an append-only NDJSON observation trail so agents can recover emitted state after harness session recycling.
-- Treat a thread-free stale `CHANGES_REQUESTED` decision as a pending bot re-review while current-head checks are still running.
-- Add `--strict-changes-requested` for callers that need the previous always-actionable review classification.
-- Document the canonical autonomous background relaunch loop and stable cursor/output paths.
+- Replace the prior generic Traycer icon with a dedicated PR Completion logo.
+- Add separate light- and dark-mode logo assets through `interface.logo` and `interface.logoDark`.
+- Keep the light logo as the composer icon because the current manifest schema has no separate dark composer-icon field.
+- Preserve deterministic minimal portal packaging below the 1 MiB upload guard.
 
 ## Safety (unchanged)
 
@@ -16,4 +15,4 @@ The safety boundary remains strict: the plugin never merges, enables or disables
 
 ## Upload artifact
 
-Use `pr-completion-0.2.0-portal-plugin.zip`. It is intentionally smaller than the full installable release ZIP while remaining deterministically derived from the same source. Do not upload the manifest-free skills-source archive.
+Use `pr-completion-0.2.1-portal-plugin.zip`. It is intentionally smaller than the full installable release ZIP while remaining deterministically derived from the same source. Do not upload the manifest-free skills-source archive.

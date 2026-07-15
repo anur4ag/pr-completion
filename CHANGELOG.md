@@ -7,10 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-15
+
+### Added
+
+- Added a dedicated dark-mode PR Completion logo through the current Codex `interface.logoDark` manifest field.
+
+### Changed
+
+- Replaced the generic Traycer icon with dedicated, optimized 1024×1024 PR Completion light and dark artwork.
+- Kept the light artwork as `interface.composerIcon` and `interface.logo`; Codex selects the dark artwork through `interface.logoDark` where supported.
+- Extended release validation and minimal portal packaging to require, validate, and ship both logo variants while preserving the 1 MiB upload guard.
+
 ### Release metadata
 
 - Pinned the immutable v0.2.0 tag commit, installable ZIP, portal ZIP, and portable content fingerprint after public release publication.
 - Marked the v0.2.0 Pages release link public and advanced hosted immutable-tag validation to v0.2.0.
+
+### Safety
+
+- Merge-ready-only authority is unchanged.
 
 ## [0.2.0] - 2026-07-15
 
@@ -97,7 +113,8 @@ Initial public dual-harness release.
 - Terminal success is verified merge readiness only.
 - The public workflow never merges, enables auto-merge, joins a merge queue, force-pushes, or bypasses branch protections.
 
-[Unreleased]: https://github.com/anur4ag/pr-completion/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/anur4ag/pr-completion/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/anur4ag/pr-completion/releases/tag/v0.2.1
 [0.2.0]: https://github.com/anur4ag/pr-completion/releases/tag/v0.2.0
 [0.1.2]: https://github.com/anur4ag/pr-completion/releases/tag/v0.1.2
 [0.1.1]: https://github.com/anur4ag/pr-completion/releases/tag/v0.1.1
