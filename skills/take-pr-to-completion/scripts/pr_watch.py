@@ -9,6 +9,7 @@ import os
 import random
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -69,8 +70,11 @@ DEFAULTS = {
     "discover": "current",
     "maxDepth": 4,
     "checkPolicy": "all",
+    "strictChangesRequested": False,
     "requiredReviewers": [],
     "targets": [],
+    "cursorPath": "auto",
+    "observationsPath": None,
 }
 
 CONFIG_KEYS = {"version", *DEFAULTS.keys()}
@@ -139,8 +143,11 @@ class Settings:
     discover: str
     max_depth: int
     check_policy: str
+    strict_changes_requested: bool
     required_reviewers: tuple[str, ...]
     targets: tuple[Target, ...]
+    cursor_path: Path | None
+    observations_path: Path | None
     fixture: Path | None
     pretty: bool
     verbose: bool
@@ -303,6 +310,55 @@ def positive_int(value: object, name: str, allow_zero: bool = False) -> int:
     return number
 
 
+def git_directory(start: Path) -> Path | None:
+    current = start.resolve()
+    for directory in (current, *current.parents):
+        marker = directory / ".git"
+        if marker.is_dir():
+            return marker.resolve()
+        if not marker.is_file():
+            continue
+        try:
+            prefix, separator, value = marker.read_text(encoding="utf-8").strip().partition(":")
+        except OSError:
+            continue
+        if separator and prefix.lower() == "gitdir" and value.strip():
+            path = Path(value.strip()).expanduser()
+            return (path if path.is_absolute() else directory / path).resolve()
+    return None
+
+
+def default_cursor_path(cwd: Path) -> Path:
+    repository_git_dir = git_directory(cwd)
+    if repository_git_dir is not None:
+        return repository_git_dir / "pr-completion" / "pr-watch-cursors.json"
+    state_home = os.environ.get("XDG_STATE_HOME")
+    if state_home:
+        base = Path(state_home).expanduser()
+    elif os.name == "nt" and os.environ.get("LOCALAPPDATA"):
+        base = Path(os.environ["LOCALAPPDATA"]).expanduser()
+    else:
+        base = Path.home() / ".local" / "state"
+    return (base / "pr-completion" / "pr-watch-cursors.json").resolve()
+
+
+def configured_path(
+    value: object,
+    name: str,
+    base: Path,
+    allow_auto: bool,
+    cwd: Path,
+) -> Path | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise WatchError(f"{name} must be a non-empty path string or null")
+    if allow_auto and value == "auto":
+        return default_cursor_path(cwd)
+    path = Path(value).expanduser()
+    return (path if path.is_absolute() else base / path).resolve()
+
+
 def build_settings(args: argparse.Namespace, cwd: Path) -> Settings:
     config_path: Path | None = None
     config: dict[str, object] = {}
@@ -322,6 +378,9 @@ def build_settings(args: argparse.Namespace, cwd: Path) -> Settings:
         "discover": args.discover,
         "maxDepth": args.max_depth,
         "checkPolicy": args.check_policy,
+        "strictChangesRequested": args.strict_changes_requested,
+        "cursorPath": args.cursor,
+        "observationsPath": args.observations_file,
     }
     values.update({key: value for key, value in overrides.items() if value is not None})
 
@@ -357,7 +416,21 @@ def build_settings(args: argparse.Namespace, cwd: Path) -> Settings:
         raise WatchError("requiredReviewers must be an array of strings")
     reviewers = tuple(dict.fromkeys(normalize_login(value) for value in reviewers_value if value))
 
+    strict_changes_requested = values["strictChangesRequested"]
+    if not isinstance(strict_changes_requested, bool):
+        raise WatchError("strictChangesRequested must be a boolean")
+
+    cursor_path = configured_path(
+        values["cursorPath"], "cursorPath", config_base, True, cwd
+    )
+    observations_path = configured_path(
+        values["observationsPath"], "observationsPath", config_base, False, cwd
+    )
+
     fixture = Path(args.fixture).expanduser().resolve() if args.fixture else None
+    if fixture is not None and args.cursor is None and "cursorPath" not in config:
+        # Offline fixtures stay hermetic unless a cursor is explicitly under test.
+        cursor_path = None
     return Settings(
         mode=mode,
         interval_seconds=interval,
@@ -368,8 +441,11 @@ def build_settings(args: argparse.Namespace, cwd: Path) -> Settings:
         discover=discover,
         max_depth=positive_int(values["maxDepth"], "maxDepth", allow_zero=True),
         check_policy=check_policy,
+        strict_changes_requested=strict_changes_requested,
         required_reviewers=reviewers,
         targets=targets,
+        cursor_path=cursor_path,
+        observations_path=observations_path,
         fixture=fixture,
         pretty=args.pretty,
         verbose=args.verbose,
@@ -734,7 +810,11 @@ def is_verified_ready(
     return True
 
 
-def classify_target(raw: dict[str, object], required_reviewers: Sequence[str]) -> dict[str, object]:
+def classify_target(
+    raw: dict[str, object],
+    required_reviewers: Sequence[str],
+    strict_changes_requested: bool,
+) -> dict[str, object]:
     pr = raw.get("pr")
     if not isinstance(pr, dict):
         raise WatchError("fixture or collector target is missing pr object")
@@ -798,8 +878,17 @@ def classify_target(raw: dict[str, object], required_reviewers: Sequence[str]) -
                 "threads": [compact_thread(thread) for thread in unresolved],
             }
         )
-    if review_decision == "CHANGES_REQUESTED":
+    if review_decision == "CHANGES_REQUESTED" and (
+        strict_changes_requested or unresolved or not pending_checks
+    ):
         actions.append({"type": "changes_requested"})
+    elif review_decision == "CHANGES_REQUESTED":
+        pending.append(
+            {
+                "type": "review_rerun",
+                "reason": "changes requested with no unresolved threads while checks are pending",
+            }
+        )
 
     if not head_sha:
         pending.append(
@@ -967,7 +1056,14 @@ def aggregate_state(targets: Sequence[dict[str, object]]) -> str:
 
 
 def snapshot(raw_targets: Sequence[dict[str, object]], settings: Settings) -> dict[str, object]:
-    targets = [classify_target(target, settings.required_reviewers) for target in raw_targets]
+    targets = [
+        classify_target(
+            target,
+            settings.required_reviewers,
+            settings.strict_changes_requested,
+        )
+        for target in raw_targets
+    ]
     state = aggregate_state(targets)
     actions = [
         {"repository": target.get("repository"), **action}
@@ -1036,6 +1132,114 @@ def snapshot_fingerprint(value: dict[str, object]) -> str:
     return json.dumps(comparable, sort_keys=True, separators=(",", ":"))
 
 
+def target_cursor_key(target: dict[str, object]) -> str | None:
+    pr = target.get("pr")
+    if not isinstance(pr, dict):
+        return None
+    url = pr.get("url")
+    if isinstance(url, str) and url:
+        return url
+    repository = target.get("repository")
+    number = pr.get("number")
+    if isinstance(repository, str) and repository and isinstance(number, int):
+        return f"{repository}#{number}"
+    return None
+
+
+def target_cursor_fingerprints(value: dict[str, object]) -> dict[str, str]:
+    targets = value.get("targets")
+    if not isinstance(targets, list):
+        return {}
+    fingerprints: dict[str, str] = {}
+    for target in targets:
+        if not isinstance(target, dict):
+            continue
+        key = target_cursor_key(target)
+        if key is not None:
+            fingerprints[key] = json.dumps(target, sort_keys=True, separators=(",", ":"))
+    return fingerprints
+
+
+def read_cursor(path: Path) -> dict[str, str]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, json.JSONDecodeError) as error:
+        raise WatchError(f"could not read cursor {path}: {error}") from error
+    if not isinstance(value, dict) or value.get("version") != SCHEMA_VERSION:
+        raise WatchError(f"cursor {path} must be a version {SCHEMA_VERSION} object")
+    targets = value.get("targets")
+    if not isinstance(targets, dict) or not all(
+        isinstance(key, str) and isinstance(fingerprint, str)
+        for key, fingerprint in targets.items()
+    ):
+        raise WatchError(f"cursor {path} has invalid target fingerprints")
+    return targets
+
+
+def cursor_matches(value: dict[str, object], path: Path | None) -> bool:
+    if path is None:
+        return False
+    fingerprints = target_cursor_fingerprints(value)
+    if not fingerprints:
+        return False
+    previous = read_cursor(path)
+    return all(previous.get(key) == fingerprint for key, fingerprint in fingerprints.items())
+
+
+def write_cursor(value: dict[str, object], path: Path | None) -> None:
+    if path is None:
+        return
+    previous = read_cursor(path)
+    previous.update(target_cursor_fingerprints(value))
+    payload = json.dumps(
+        {"version": SCHEMA_VERSION, "targets": previous},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(payload)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except OSError as error:
+        if "temporary" in locals():
+            temporary.unlink(missing_ok=True)
+        raise WatchError(f"could not write cursor {path}: {error}") from error
+
+
+def append_observation(value: dict[str, object], path: Path | None) -> None:
+    if path is None:
+        return
+    payload = json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8", newline="") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except OSError as error:
+        raise WatchError(f"could not append observations file {path}: {error}") from error
+
+
+def emit_observation(value: dict[str, object], settings: Settings) -> None:
+    append_observation(value, settings.observations_path)
+    write_cursor(value, settings.cursor_path)
+    emit(value, settings.pretty)
+
+
 def sleep_duration(base: float, jitter: float) -> float:
     if jitter == 0:
         return base
@@ -1052,7 +1256,7 @@ def watch(settings: Settings, runner: Runner, cwd: Path) -> int:
         if settings.timeout_seconds and time.monotonic() - started >= settings.timeout_seconds:
             timeout_value = error_snapshot(WatchError("watch timeout reached"))
             timeout_value["state"] = "timeout"
-            emit(timeout_value, settings.pretty)
+            emit_observation(timeout_value, settings)
             return EXIT_TIMEOUT
         try:
             value = collect_snapshot(settings, runner, cwd)
@@ -1061,7 +1265,7 @@ def watch(settings: Settings, runner: Runner, cwd: Path) -> int:
         except WatchError as error:
             consecutive_errors += 1
             if not error.retryable or consecutive_errors >= settings.max_errors:
-                emit(error_snapshot(error), settings.pretty)
+                emit_observation(error_snapshot(error), settings)
                 return EXIT_BLOCKED
             if settings.verbose:
                 print(f"retryable watcher error: {error}", file=sys.stderr, flush=True)
@@ -1070,17 +1274,24 @@ def watch(settings: Settings, runner: Runner, cwd: Path) -> int:
             continue
 
         fingerprint = snapshot_fingerprint(value)
-        if settings.mode != "watch" or fingerprint != last_fingerprint:
-            emit(value, settings.pretty)
-            last_fingerprint = fingerprint
-
         state = str(value["state"])
-        if settings.fixture is not None or settings.mode == "once":
+
+        if settings.mode == "once":
+            emit_observation(value, settings)
             return exit_code(state)
-        if settings.mode == "until-actionable" and state != "pending":
-            return exit_code(state)
-        if settings.mode == "watch" and state in {"ready", "auto_merge", "merged", "blocked"}:
-            return exit_code(state)
+
+        if settings.mode == "until-actionable":
+            if state == "actionable" and cursor_matches(value, settings.cursor_path):
+                pass
+            elif state != "pending":
+                emit_observation(value, settings)
+                return exit_code(state)
+        else:
+            if fingerprint != last_fingerprint:
+                emit_observation(value, settings)
+                last_fingerprint = fingerprint
+            if state in {"ready", "auto_merge", "merged", "blocked"}:
+                return exit_code(state)
         time.sleep(sleep_duration(settings.interval_seconds, settings.jitter))
 
 
@@ -1104,8 +1315,19 @@ def argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--jitter", type=float, help="poll jitter fraction from 0 to 1")
     parser.add_argument("--max-errors", type=int, help="consecutive retryable errors")
     parser.add_argument("--check-policy", choices=("all", "required"))
+    parser.add_argument(
+        "--strict-changes-requested",
+        action="store_true",
+        default=None,
+        help="always treat CHANGES_REQUESTED as actionable",
+    )
     parser.add_argument("--reviewer", action="append", help="required reviewer login; repeatable")
-    parser.add_argument("--fixture", help="offline raw snapshot fixture; always observes once")
+    parser.add_argument("--cursor", help="durable observation cursor path")
+    parser.add_argument(
+        "--observations-file",
+        help="append emitted observations as NDJSON at this path",
+    )
+    parser.add_argument("--fixture", help="offline raw snapshot fixture")
     parser.add_argument("--print-config", action="store_true", help="print resolved configuration and exit")
     parser.add_argument("--pretty", action="store_true", help="pretty-print JSON")
     parser.add_argument("--verbose", action="store_true", help="write retry diagnostics to stderr")
@@ -1124,7 +1346,12 @@ def resolved_config(settings: Settings) -> dict[str, object]:
         "discover": settings.discover,
         "maxDepth": settings.max_depth,
         "checkPolicy": settings.check_policy,
+        "strictChangesRequested": settings.strict_changes_requested,
         "requiredReviewers": list(settings.required_reviewers),
+        "cursorPath": str(settings.cursor_path) if settings.cursor_path is not None else None,
+        "observationsPath": (
+            str(settings.observations_path) if settings.observations_path is not None else None
+        ),
         "targets": [
             {
                 "path": str(target.path),

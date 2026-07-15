@@ -104,13 +104,27 @@ Enforced invariants:
 3. A push invalidates prior observation; the watcher restarts.
 4. Successful watcher observations exit process status `0`; JSON `state` is the machine contract.
 5. Background watcher execution is not completion until the agent consumes final JSON.
-6. Unrelated dirty changes, missing credentials, and non-derivable product decisions escalate rather than invent authority.
+6. The same durable cursor is reused across relaunches so an identical actionable observation is not re-reported.
+7. Lost harness completion metadata is recovered from the durable output or observations file, never interpreted as an empty result.
+8. Unrelated dirty changes, missing credentials, and non-derivable product decisions escalate rather than invent authority.
+
+### Watcher configuration
+
+CLI flags override the corresponding `.pr-completion.json` keys.
+
+| JSON key | CLI flag | Default | Meaning |
+| --- | --- | --- | --- |
+| `cursorPath` | `--cursor PATH` | `$GIT_DIR/pr-completion/pr-watch-cursors.json` (platform state fallback) | Atomically stores the last emitted fingerprint per PR target. `null` disables it. |
+| `observationsPath` | `--observations-file PATH` | `null` | Appends each emitted observation as one NDJSON line. |
+| `strictChangesRequested` | `--strict-changes-requested` | `false` | Always reports `CHANGES_REQUESTED` as actionable. |
+
+With the default non-strict behavior, `CHANGES_REQUESTED` plus zero unresolved threads plus pending current-head checks is reported as pending `review_rerun`. Unresolved threads, or a standing decision after pending checks finish, remain actionable.
 
 ### Watcher states
 
 | State | Meaning | Agent response |
 | --- | --- | --- |
-| `pending` | A required gate is still running or GitHub state has not stabilized. | Wait, then observe again. |
+| `pending` | A required gate, including a thread-free bot re-review, is still running or GitHub state has not stabilized. | Wait, then observe again. |
 | `actionable` | CI, reviews, conflicts, or a required base update need work. | Dispatch the matching sibling skill, then re-observe. |
 | `ready` | Current-head checks, approvals, threads, and mergeability satisfy the readiness contract. | Stop and report evidence; do not merge. |
 | `auto_merge` | Another actor already enabled auto-merge. | Stop and report the external setting; do not change it. |

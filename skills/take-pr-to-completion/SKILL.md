@@ -32,17 +32,39 @@ python3 <skill-directory>/scripts/pr_watch.py
 
 The script owns repository discovery, GitHub queries, GraphQL pagination, polling, backoff, head-SHA freshness, and JSON output. CLI arguments override `.pr-completion.json`, which overrides defaults. Use `--help` for flags and `--print-config --pretty` for the resolved schema and defaults. For multiple independent repositories or submodules, pass repeated `--target PATH[=PR]`, configure `targets`, or use `--discover open-pr`. Pass required bot or human logins with repeated `--reviewer` or `requiredReviewers`.
 
-Do not recreate manual polling while the watcher works. A successfully emitted observation exits `0`; the JSON `state`, not the process exit code, is the state-machine signal:
+The durable cursor defaults to `$GIT_DIR/pr-completion/pr-watch-cursors.json`, including the resolved worktree git dir when `.git` is a file. If no git metadata is available, it falls back to `$XDG_STATE_HOME/pr-completion/pr-watch-cursors.json`, then `~/.local/state/pr-completion/pr-watch-cursors.json` (or `%LOCALAPPDATA%/pr-completion/pr-watch-cursors.json` on Windows). It stores the last emitted fingerprint per PR target outside the working tree. Keep that path stable across every relaunch. Set `cursorPath` to `null` only for an intentional stateless run, or override it with `--cursor PATH`.
+
+Configure a stable `observationsPath` or pass `--observations-file PATH` for the recycling-proof NDJSON trail. A typical repository configuration is:
+
+```json
+{
+  "version": 1,
+  "cursorPath": "~/.local/state/pr-completion/pr-watch-cursors.json",
+  "observationsPath": "~/.local/state/pr-completion/pr-watch-observations.ndjson",
+  "strictChangesRequested": false
+}
+```
+
+`strictChangesRequested` defaults to `false`. With that default, a standing `CHANGES_REQUESTED` decision is a `review_rerun` pending state when the current head has zero unresolved threads and checks are still pending. It becomes actionable again when a thread is unresolved or pending checks finish without clearing the decision. Use `--strict-changes-requested` (or set `strictChangesRequested` to `true`) to restore always-actionable classification.
+
+Do not recreate manual polling while the watcher works. In `until-actionable`, the process emits exactly one new actionable or terminal observation when it exits; a previously emitted identical actionable fingerprint remains a wait state across process relaunches. The JSON `state`, not the process exit code, is the state-machine signal:
 
 - `actionable`: dispatch every reported action below.
-- `pending`: possible on normal output only in `once` or `watch` mode; use `until-actionable` to wait.
+- `pending`: possible on normal output only in `once` or `watch` mode; `until-actionable` keeps polling without emitting it.
 - `ready`: current head is verified merge-ready under the watcher's fail-closed predicate; report and stop. Issue no merge-state mutation.
 - `auto_merge`: auto-merge was already enabled by another actor. This is terminal and read-only even if CI or reviews still look pending or failing: report structured provenance from the observation and stop without dispatching repairs or changing auto-merge.
 - `merged`: the PR is already merged (externally); report and finish.
 - Exit `20` with `blocked`: diagnose configuration, authentication, or an unreported gate; escalate only if unrecoverable.
 - Exit `30`: watcher timeout; inspect its last JSON state and resume or escalate with evidence.
 
-Always consume the emitted JSON before yielding, sending a status update, or ending the turn. If the watcher is launched in the background, keep responsibility for that process: wait for its completion notification, read the referenced output file, parse the final JSON object, and dispatch its state before yielding. Never claim a watcher is still running after receiving its completion notification, and never leave a completed watcher's output unread. If the harness cannot reliably deliver and consume background completion, run the watcher in the foreground instead.
+The canonical autonomous pattern is a durable relaunch loop:
+
+1. Launch `until-actionable` in the background with the stable cursor, observations file, and a durable stdout output file.
+2. When the process exits, read the output file, parse the final JSON object, and dispatch every action it reports.
+3. After repairs and any push, relaunch with the **same cursor and observations paths** against the current head.
+4. Repeat until `ready`, `auto_merge`, `merged`, or `blocked` is emitted.
+
+Always consume the emitted JSON before yielding, sending a status update, or ending the turn. Claude Code background output reaches the agent when the process exits, not through continuous stdout. If a harness completion record is lost after session recycling, recover the observation from the durable stdout output file or the last applicable line in the observations NDJSON file; never assume missing completion metadata means no observation was emitted. Never leave a completed watcher's output unread.
 
 After any push, the prior observation is stale. Stop an old watcher if needed and start a fresh one against the new head SHA. Repeat until the watcher reports a terminal state.
 
@@ -67,7 +89,7 @@ Escalate external blockers only after safe diagnosis and justified retries canno
 
 ### Review feedback
 
-For `review_threads` or `changes_requested`, load `$pr-completion:gh-review-comment-triage` for the current round. If triage changes code, invoke `$pr-completion:commit-workspace-changes`, push, and restart the watcher.
+For `review_threads` or actionable `changes_requested`, load `$pr-completion:gh-review-comment-triage` for the current round. A `review_rerun` pending entry means the standing decision has no unresolved thread to dispatch while checks are pending; keep waiting. If triage changes code, invoke `$pr-completion:commit-workspace-changes`, push, and restart the watcher.
 
 Do not treat approval on an older SHA as current when repository policy or the reviewer requires a fresh pass. Continue until no actionable threads remain and required approvals or bot passes are current for the **current** head SHA.
 

@@ -43,7 +43,13 @@ sys.modules[SAFETY_SPEC.name] = safety
 SAFETY_SPEC.loader.exec_module(safety)
 
 
-def settings(fixture: Path | None = None, reviewers=()):
+def settings(
+    fixture: Path | None = None,
+    reviewers=(),
+    strict_changes_requested=False,
+    cursor_path=None,
+    observations_path=None,
+):
     return pr_watch.Settings(
         mode="once",
         interval_seconds=30,
@@ -54,8 +60,11 @@ def settings(fixture: Path | None = None, reviewers=()):
         discover="current",
         max_depth=4,
         check_policy="all",
+        strict_changes_requested=strict_changes_requested,
         required_reviewers=tuple(reviewers),
         targets=(),
+        cursor_path=cursor_path,
+        observations_path=observations_path,
         fixture=fixture,
         pretty=False,
         verbose=False,
@@ -116,6 +125,49 @@ class PullRequestStateTests(unittest.TestCase):
         self.assertEqual(pr_watch.exit_code(value["state"]), pr_watch.EXIT_OBSERVED)
         self.assertEqual(value["actions"][0]["type"], "review_threads")
         self.assertEqual(value["actions"][0]["count"], 1)
+
+    def test_changes_requested_without_threads_while_checks_pending_waits_for_rerun(self):
+        raw = json.loads((FIXTURES / "pending-ci.json").read_text())
+        raw["targets"][0]["pr"]["reviewDecision"] = "CHANGES_REQUESTED"
+        value = pr_watch.snapshot(raw["targets"], settings())
+
+        self.assertEqual(value["state"], "pending")
+        self.assertNotIn("changes_requested", [action["type"] for action in value["actions"]])
+        self.assertIn(
+            "review_rerun",
+            [item["type"] for item in value["targets"][0]["pending"]],
+        )
+
+    def test_changes_requested_without_pending_checks_remains_actionable(self):
+        raw = json.loads((FIXTURES / "ready-to-merge.json").read_text())
+        raw["targets"][0]["pr"]["reviewDecision"] = "CHANGES_REQUESTED"
+        value = pr_watch.snapshot(raw["targets"], settings())
+
+        self.assertEqual(value["state"], "actionable")
+        self.assertIn("changes_requested", [action["type"] for action in value["actions"]])
+
+    def test_changes_requested_with_unresolved_threads_is_actionable_while_checks_pending(self):
+        raw = json.loads((FIXTURES / "review-comment.json").read_text())
+        raw["targets"][0]["pr"]["reviewDecision"] = "CHANGES_REQUESTED"
+        raw["targets"][0]["checks"] = [
+            {"name": "review", "state": "IN_PROGRESS", "bucket": "pending"}
+        ]
+        value = pr_watch.snapshot(raw["targets"], settings())
+
+        self.assertEqual(value["state"], "actionable")
+        action_types = [action["type"] for action in value["actions"]]
+        self.assertIn("review_threads", action_types)
+        self.assertIn("changes_requested", action_types)
+
+    def test_strict_changes_requested_restores_always_actionable_behavior(self):
+        raw = json.loads((FIXTURES / "pending-ci.json").read_text())
+        raw["targets"][0]["pr"]["reviewDecision"] = "CHANGES_REQUESTED"
+        value = pr_watch.snapshot(
+            raw["targets"], settings(strict_changes_requested=True)
+        )
+
+        self.assertEqual(value["state"], "actionable")
+        self.assertIn("changes_requested", [action["type"] for action in value["actions"]])
 
     def test_conflict_fixture(self):
         value = self.fixture_snapshot("conflict.json")
@@ -350,6 +402,19 @@ class PullRequestStateTests(unittest.TestCase):
 
 
 class ConfigurationTests(unittest.TestCase):
+    def test_default_cursor_uses_repository_git_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".git").mkdir()
+            args = pr_watch.argument_parser().parse_args(["--no-config"])
+            value = pr_watch.build_settings(args, root)
+
+            self.assertEqual(value.cursor_path, pr_watch.default_cursor_path(root))
+            self.assertEqual(
+                value.cursor_path,
+                root.resolve() / ".git" / "pr-completion" / "pr-watch-cursors.json",
+            )
+
     def test_cli_values_override_repository_config(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -383,6 +448,49 @@ class ConfigurationTests(unittest.TestCase):
             resolved = pr_watch.resolved_config(value)
             self.assertEqual(resolved["intervalSeconds"], 5)
             self.assertEqual(resolved["targets"][0]["pr"], "123")
+
+    def test_new_config_and_cli_fields_are_resolved(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / ".pr-completion.json"
+            config.write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "strictChangesRequested": False,
+                        "cursorPath": "state/cursor.json",
+                        "observationsPath": "state/observations.ndjson",
+                    }
+                )
+            )
+            args = pr_watch.argument_parser().parse_args(
+                [
+                    "--config",
+                    str(config),
+                    "--strict-changes-requested",
+                    "--cursor",
+                    str(root / "override-cursor.json"),
+                    "--observations-file",
+                    str(root / "override-observations.ndjson"),
+                ]
+            )
+            value = pr_watch.build_settings(args, root)
+            resolved = pr_watch.resolved_config(value)
+
+            self.assertTrue(value.strict_changes_requested)
+            self.assertEqual(value.cursor_path, (root / "override-cursor.json").resolve())
+            self.assertEqual(
+                value.observations_path,
+                (root / "override-observations.ndjson").resolve(),
+            )
+            self.assertTrue(resolved["strictChangesRequested"])
+            self.assertEqual(
+                resolved["cursorPath"], str((root / "override-cursor.json").resolve())
+            )
+            self.assertEqual(
+                resolved["observationsPath"],
+                str((root / "override-observations.ndjson").resolve()),
+            )
 
 
 class BackgroundRunnerTests(unittest.TestCase):
@@ -462,6 +570,145 @@ class BackgroundRunnerTests(unittest.TestCase):
         self.assertEqual(result.returncode, pr_watch.EXIT_BLOCKED, result.stderr)
         value = json.loads(result.stdout)
         self.assertEqual(value["state"], "blocked")
+
+    def test_cursor_suppresses_repeated_actionable_and_emits_changed_observation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cursor = root / "cursor.json"
+            changed_fixture = root / "changed.json"
+            raw = json.loads((FIXTURES / "review-comment.json").read_text())
+            raw["targets"][0]["pr"]["headRefOid"] = "head-review-changed"
+            changed_fixture.write_text(json.dumps(raw))
+            common = [
+                sys.executable,
+                str(SCRIPT_PATH),
+                "--mode",
+                "until-actionable",
+                "--cursor",
+                str(cursor),
+                "--interval",
+                "0.01",
+                "--max-interval",
+                "0.01",
+                "--jitter",
+                "0",
+            ]
+
+            first = subprocess.run(
+                [*common, "--fixture", str(FIXTURES / "review-comment.json")],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            repeated = subprocess.run(
+                [
+                    *common,
+                    "--fixture",
+                    str(FIXTURES / "review-comment.json"),
+                    "--timeout",
+                    "0.04",
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            changed = subprocess.run(
+                [*common, "--fixture", str(changed_fixture)],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(json.loads(first.stdout)["state"], "actionable")
+            self.assertEqual(repeated.returncode, pr_watch.EXIT_TIMEOUT, repeated.stderr)
+            self.assertEqual(json.loads(repeated.stdout)["state"], "timeout")
+            self.assertEqual(changed.returncode, 0, changed.stderr)
+            changed_value = json.loads(changed.stdout)
+            self.assertEqual(changed_value["state"], "actionable")
+            self.assertEqual(
+                changed_value["targets"][0]["pr"]["headSha"], "head-review-changed"
+            )
+
+    def test_terminal_state_exits_even_when_cursor_matches(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cursor = Path(directory) / "cursor.json"
+            command = [
+                sys.executable,
+                str(SCRIPT_PATH),
+                "--mode",
+                "until-actionable",
+                "--cursor",
+                str(cursor),
+                "--fixture",
+                str(FIXTURES / "ready-to-merge.json"),
+            ]
+
+            first = subprocess.run(
+                command, text=True, capture_output=True, check=False
+            )
+            second = subprocess.run(
+                command, text=True, capture_output=True, check=False
+            )
+
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertEqual(json.loads(first.stdout)["state"], "ready")
+            self.assertEqual(json.loads(second.stdout)["state"], "ready")
+
+    def test_observations_file_appends_valid_ndjson_across_runs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            observations = Path(directory) / "observations.ndjson"
+            for fixture in ("pending-ci.json", "ready-to-merge.json"):
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        str(SCRIPT_PATH),
+                        "--mode",
+                        "once",
+                        "--observations-file",
+                        str(observations),
+                        "--fixture",
+                        str(FIXTURES / fixture),
+                    ],
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+            lines = observations.read_text().splitlines()
+            self.assertEqual(len(lines), 2)
+            values = [json.loads(line) for line in lines]
+            self.assertEqual([value["state"] for value in values], ["pending", "ready"])
+
+    def test_strict_changes_requested_flag_restores_actionable_behavior(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Path(directory) / "changes-requested-pending.json"
+            raw = json.loads((FIXTURES / "pending-ci.json").read_text())
+            raw["targets"][0]["pr"]["reviewDecision"] = "CHANGES_REQUESTED"
+            fixture.write_text(json.dumps(raw))
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT_PATH),
+                    "--mode",
+                    "until-actionable",
+                    "--strict-changes-requested",
+                    "--fixture",
+                    str(fixture),
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            value = json.loads(result.stdout)
+            self.assertEqual(value["state"], "actionable")
+            self.assertIn(
+                "changes_requested", [action["type"] for action in value["actions"]]
+            )
 
 
 class MergeReadySafetyContractTests(unittest.TestCase):
@@ -716,4 +963,3 @@ class MergeReadySafetyContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
