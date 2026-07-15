@@ -1,15 +1,14 @@
-# PR Completion v0.1.2
+# PR Completion v0.2.0
 
-Portal-ready patch under the verified **Business — Traycer** publisher identity.
+Autonomous watcher relaunch release under the verified **Business — Traycer** publisher identity.
 
 ## Changes
 
-- Ship the canonical 1024×1024 Traycer square icon as a public plugin asset.
-- Add required Codex portal visual fields `interface.composerIcon` and `interface.logo` with plugin-root-relative `./assets/traycer-icon.png` paths.
-- Align public manifests and publisher-facing listing materials with Traycer while keeping GitHub repository ownership (`anur4ag/pr-completion`) and MIT copyright attribution accurate.
-- Change `interface.defaultPrompt` to the current documented array shape.
-- Replace the full-repository portal upload with a deterministic minimal ZIP containing only the Codex manifest, runtime skill files, and referenced square assets.
-- Exclude tests, CI workflows, docs, release scripts, submission materials, and alternate-harness manifests from the portal upload; enforce a conservative 1 MiB size guard.
+- Add a durable per-PR cursor that suppresses identical actionable observations across watcher relaunches.
+- Add an append-only NDJSON observation trail so agents can recover emitted state after harness session recycling.
+- Treat a thread-free stale `CHANGES_REQUESTED` decision as a pending bot re-review while current-head checks are still running.
+- Add `--strict-changes-requested` for callers that need the previous always-actionable review classification.
+- Document the canonical autonomous background relaunch loop and stable cursor/output paths.
 
 ## Safety (unchanged)
 
@@ -17,4 +16,4 @@ The safety boundary remains strict: the plugin never merges, enables or disables
 
 ## Upload artifact
 
-Use `pr-completion-0.1.2-portal-plugin.zip`. It is intentionally smaller than the full installable release ZIP while remaining deterministically derived from the same source. Do not upload the manifest-free skills-source archive.
+Use `pr-completion-0.2.0-portal-plugin.zip`. It is intentionally smaller than the full installable release ZIP while remaining deterministically derived from the same source. Do not upload the manifest-free skills-source archive.

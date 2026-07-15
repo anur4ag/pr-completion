@@ -10,7 +10,7 @@
     {
       "name": "pr-completion",
       "description": "Validate and commit workspace changes, then drive GitHub pull requests through CI, reviews, conflicts, and verified merge readiness.",
-      "version": "0.1.2",
+      "version": "0.2.0",
       "source": "./",
       "category": "productivity"
     }

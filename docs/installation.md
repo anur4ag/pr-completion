@@ -35,17 +35,17 @@ claude plugin install pr-completion@pr-completion --scope user
 
 Use `--scope user` for a personal install. Claude Code also supports `project` and `local` scopes.
 
-### Pin v0.1.2
+### Pin v0.2.0
 
 ```bash
-claude plugin marketplace add anur4ag/pr-completion@v0.1.2
+claude plugin marketplace add anur4ag/pr-completion@v0.2.0
 claude plugin install pr-completion@pr-completion --scope user
 ```
 
 Equivalent Git URL form:
 
 ```bash
-claude plugin marketplace add https://github.com/anur4ag/pr-completion.git#v0.1.2
+claude plugin marketplace add https://github.com/anur4ag/pr-completion.git#v0.2.0
 claude plugin install pr-completion@pr-completion --scope user
 ```
 
@@ -76,17 +76,17 @@ codex plugin marketplace add anur4ag/pr-completion
 codex plugin add pr-completion@pr-completion
 ```
 
-### Pin v0.1.2
+### Pin v0.2.0
 
 ```bash
-codex plugin marketplace add anur4ag/pr-completion@v0.1.2
+codex plugin marketplace add anur4ag/pr-completion@v0.2.0
 codex plugin add pr-completion@pr-completion
 ```
 
 Or pass the ref separately:
 
 ```bash
-codex plugin marketplace add anur4ag/pr-completion --ref v0.1.2
+codex plugin marketplace add anur4ag/pr-completion --ref v0.2.0
 codex plugin add pr-completion@pr-completion
 ```
 
@@ -167,4 +167,4 @@ Codex development may use `scripts/stage-codex-dev-install.py` to create a tempo
 
 - [Skills and safety](skills.md)
 - [Support](support.md)
-- [Release v0.1.2](https://github.com/anur4ag/pr-completion/releases/tag/v0.1.2)
+- [Release v0.2.0](https://github.com/anur4ag/pr-completion/releases/tag/v0.2.0)

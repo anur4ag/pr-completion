@@ -43,7 +43,7 @@ class GeneratedMarkupTests(unittest.TestCase):
         self.assertEqual(len(ids), len(set(ids)))
         self.assertIn("install", ids)
         self.assertIn("install-2", ids)
-        self.assertIn("pin-v0-1-2-2", ids)
+        self.assertIn("pin-v0-2-0-2", ids)
         self.assertIn("update-2", ids)
         self.assertIn("inspect-or-remove-2", ids)
 
