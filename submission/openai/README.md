@@ -19,7 +19,7 @@ From a clean checkout:
 # Pre-tag / local portal ZIP from the current tree (default mode)
 python3 -B scripts/package-openai-submission.py
 
-# After publication pins are populated, reconstruct and verify immutable v0.2.0
+# Reconstruct and verify the immutable published v0.2.0 source and public URLs
 python3 -B scripts/package-openai-submission.py --from-pinned-release --check-urls
 ```
 
