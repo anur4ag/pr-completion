@@ -41,7 +41,7 @@ All four ship from one shared `skills/` tree. Claude Code and Codex load the sam
 
 ## Deterministic watcher
 
-The orchestrator repeatedly observes the PR and emits one machine-readable state:
+The orchestrator repeatedly observes the PR and emits one machine-readable state. Its default durable cursor suppresses an identical actionable observation across relaunches:
 
 ```text
 pending -> actionable -> repair -> new head -> re-observe
@@ -50,6 +50,8 @@ pending -> actionable -> repair -> new head -> re-observe
 ```
 
 Every push invalidates the previous observation. `ready` is calculated again for the new head from required checks, current approvals, unresolved review threads, and mergeability. `auto_merge` means another actor already enabled it; the plugin does not change that setting.
+
+The autonomous loop launches the watcher in the background, consumes its single new observation on exit, dispatches repairs, and relaunches with the same cursor. An optional NDJSON observations file preserves emitted output across harness session recycling. A bot's standing `CHANGES_REQUESTED` decision is treated as a wait state while the current head has no unresolved review threads and checks are still pending.
 
 ## Requirements
 

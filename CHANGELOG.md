@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added a durable per-target watcher cursor (`cursorPath` / `--cursor`) with an outside-worktree git-dir default, platform-state fallback, atomic writes, and cross-invocation actionable-observation deduplication.
+- Added an append-only NDJSON observations trail (`observationsPath` / `--observations-file`) for recovery after harness session recycling.
+- Added `strictChangesRequested` / `--strict-changes-requested` to opt back into always-actionable review decisions.
+
+### Changed
+
+- `until-actionable` now emits exactly one new actionable or terminal observation on exit and keeps polling when the durable cursor already records an identical actionable observation.
+- A standing `CHANGES_REQUESTED` decision with no unresolved review threads is treated as a pending review rerun while current-head checks are still pending.
+
+### Documentation
+
+- Documented the canonical background relaunch loop, stable cursor reuse, durable output recovery, and stale bot review behavior.
+
+### Safety
+
+- Merge-ready-only authority is unchanged.
+
 ## [0.1.2] - 2026-07-14
 
 Portal upload compatibility patch.
