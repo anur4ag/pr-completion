@@ -819,7 +819,7 @@ def check_urls(urls: list[str]) -> list[dict[str, Any]]:
     for url in urls:
         request = urllib.request.Request(
             url,
-            headers={"User-Agent": "pr-completion-openai-submission-validator/0.1.2"},
+            headers={"User-Agent": "pr-completion-openai-submission-validator/0.2.0"},
         )
         try:
             with urllib.request.urlopen(request, timeout=20) as response:

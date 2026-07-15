@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-15
+
 ### Added
 
 - Added a durable per-target watcher cursor (`cursorPath` / `--cursor`) with an outside-worktree git-dir default, platform-state fallback, atomic writes, and cross-invocation actionable-observation deduplication.
@@ -90,7 +92,8 @@ Initial public dual-harness release.
 - Terminal success is verified merge readiness only.
 - The public workflow never merges, enables auto-merge, joins a merge queue, force-pushes, or bypasses branch protections.
 
-[Unreleased]: https://github.com/anur4ag/pr-completion/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/anur4ag/pr-completion/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/anur4ag/pr-completion/releases/tag/v0.2.0
 [0.1.2]: https://github.com/anur4ag/pr-completion/releases/tag/v0.1.2
 [0.1.1]: https://github.com/anur4ag/pr-completion/releases/tag/v0.1.1
 [0.1.0]: https://github.com/anur4ag/pr-completion/releases/tag/v0.1.0
