@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-17
+
 ### Added
 
 - Added the v0.3.0 autonomous landing contract: direct commit-skill invocation hands off to push, PR creation, and the watcher unless the user explicitly requests local-only work.
@@ -135,7 +137,8 @@ Initial public dual-harness release.
 - Terminal success is verified merge readiness only.
 - The public workflow never merges, enables auto-merge, joins a merge queue, force-pushes, or bypasses branch protections.
 
-[Unreleased]: https://github.com/anur4ag/pr-completion/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/anur4ag/pr-completion/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/anur4ag/pr-completion/releases/tag/v0.3.0
 [0.2.1]: https://github.com/anur4ag/pr-completion/releases/tag/v0.2.1
 [0.2.0]: https://github.com/anur4ag/pr-completion/releases/tag/v0.2.0
 [0.1.2]: https://github.com/anur4ag/pr-completion/releases/tag/v0.1.2

@@ -361,6 +361,8 @@ class PortalPackageValidationTests(unittest.TestCase):
         self.assertIn("--from-working-tree", workflow)
         self.assertIn("portal-plugin.zip", workflow)
         self.assertIn("sha256sum ./*.zip", workflow)
+        self.assertIn("explicit per-PR exact-head confirmation", workflow)
+        self.assertNotIn("merge-ready only (no merge / auto-merge", workflow)
 
     def test_release_integrity_workflow_uses_both_byte_pins(self) -> None:
         workflow = (ROOT / ".github/workflows/release-integrity.yml").read_text(

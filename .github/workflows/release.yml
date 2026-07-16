@@ -117,7 +117,7 @@ jobs:
             echo ""
             echo "- Version: \`${VERSION}\`"
             echo "- Tag: \`${TAG}\`"
-            echo "- Safety: merge-ready only (no merge / auto-merge / force-push / protection bypass)"
+            echo "- Safety: protected landing only after explicit per-PR exact-head confirmation; no admin bypass, force-push, history rewrite, or protection bypass"
             echo ""
             echo "### Install"
             echo ""
