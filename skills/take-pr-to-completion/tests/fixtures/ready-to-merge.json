@@ -4,6 +4,12 @@
       "path": "/fixture/current",
       "kind": "current",
       "repository": "example/current",
+      "repositoryPolicy": {
+        "mergeCommitAllowed": true,
+        "rebaseMergeAllowed": true,
+        "squashMergeAllowed": true
+      },
+      "isMergeQueueEnabled": false,
       "pr": {
         "number": 404,
         "url": "https://github.com/example/current/pull/404",

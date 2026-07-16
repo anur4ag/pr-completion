@@ -6,7 +6,7 @@ Official workflow: <https://learn.chatgpt.com/docs/submit-plugins>
 
 - Submission type: **Skills only**; no MCP server, app ID, connector, demo account, domain challenge, or content-security-policy fields apply.
 - Verified portal developer identity to select: **Business — Traycer**.
-- Public plugin version / tag: `0.2.1` / `v0.2.1` after release publication.
+- Candidate plugin version / tag: `0.3.0` / `v0.3.0`; do not upload until that tag, release, checksums, and source pins are public and validated.
 - Portal upload ZIP includes `.codex-plugin/plugin.json` under the sole top-level plugin directory, plus `skills/` and square `interface.composerIcon`, `interface.logo`, and `interface.logoDark` assets.
 - `interface.defaultPrompt` is a non-empty array, matching the current published manifest example.
 - Portal upload ZIP is a deterministic minimal derivative of the same tagged source. It excludes non-runtime release, CI, docs, test, and submission files and must stay below the conservative 1 MiB upload guard.
@@ -18,7 +18,7 @@ Official workflow: <https://learn.chatgpt.com/docs/submit-plugins>
 
 - [ ] The selected organization identity is **Business — Traycer** (the only verified identity observed in the portal dropdown for this account).
 - [ ] The submitting account has **Apps Management: Write** in that same organization (organization owners already have this permission).
-- [ ] The form accepts `submission-out/pr-completion-0.2.1-portal-plugin.zip` on the Skills tab.
+- [ ] The form accepts `submission-out/pr-completion-0.3.0-portal-plugin.zip` on the Skills tab after release publication.
 - [ ] The entered portal fields exactly match `listing.json`, `starter-prompts.json`, `test-cases.json`, `availability.md`, and `release-notes.md`.
 - [ ] All policy attestations are accurate after reviewing the final draft.
 - [ ] Selecting **Submit for Review** returns a submission identifier and a review state.

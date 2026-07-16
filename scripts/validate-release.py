@@ -129,6 +129,7 @@ REQUIRED_FILE_GROUPS: dict[str, tuple[str, ...]] = {
         "skills/gh-review-comment-triage/SKILL.md",
         "skills/merge-conflict-resolution/SKILL.md",
         "skills/take-pr-to-completion/scripts/pr_watch.py",
+        "skills/take-pr-to-completion/scripts/pr_land.py",
     ),
     "batch-a-tooling": (
         "scripts/set-version.py",
@@ -176,6 +177,7 @@ REQUIRED_FILE_GROUPS: dict[str, tuple[str, ...]] = {
     # Verification assets: tests, offline fixtures, and public CSS must ship.
     "verification-test-modules": (
         "skills/take-pr-to-completion/tests/test_pr_watch.py",
+        "skills/take-pr-to-completion/tests/test_pr_land.py",
         "scripts/tests/test_package_tooling.py",
         "scripts/tests/test_contamination.py",
         "scripts/tests/test_install_smoke.py",
@@ -517,6 +519,11 @@ def iter_text_files(root: Path) -> list[Path]:
 
 
 def check_package_hygiene(root: Path, findings: list[str]) -> None:
+    for path in root.rglob("*"):
+        if ".git" in path.parts:
+            continue
+        if path.is_symlink():
+            findings.append(f"symlink is forbidden in release source: {rel(root, path)}")
     for path in root.rglob("__pycache__"):
         if ".git" in path.parts:
             continue

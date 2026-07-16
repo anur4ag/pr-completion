@@ -25,16 +25,16 @@ You agree not to use the plugin to:
 - attempt unauthorized access to systems or data;
 - bypass security controls except where you are explicitly authorized on repositories you control or are permitted to change;
 - violate GitHub, Anthropic, OpenAI, or other provider terms applicable to your accounts;
-- misrepresent the plugin as performing merges or auto-merge enablement when the public skills stop at merge readiness.
+- misrepresent a readiness observation as permission to land, or a submitted landing request as a completed merge.
 
 ## Your responsibilities
 
 You are responsible for:
 
 - the repositories, credentials, and machine permissions you grant your coding agent;
-- reviewing commits, pushes, and PR changes before merge;
+- reviewing commits, pushes, PR changes, and the exact per-PR landing confirmation before approval;
 - complying with your employer's and customers' policies;
-- deciding when to merge a PR the plugin reports as merge-ready.
+- deciding whether to approve the guarded auto-merge or merge-queue request for a PR the plugin reports as ready.
 
 ## Third-party services
 

@@ -1,8 +1,8 @@
 {
   "name": "pr-completion",
   "displayName": "PR Completion",
-  "version": "0.2.1",
-  "description": "Validate and commit local changes, then deterministically watch GitHub pull requests through CI, reviews, conflicts, and verified merge readiness.",
+  "version": "0.3.0",
+  "description": "Validate and commit local changes, create and watch GitHub pull requests, then request an explicitly approved landing for each exact ready head.",
   "author": {
     "name": "Traycer",
     "url": "https://github.com/anur4ag"

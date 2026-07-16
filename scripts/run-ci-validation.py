@@ -3,7 +3,7 @@
 
 Owns each validation exactly once (no duplicated cycles inside this runner):
 
-  1. merge-ready safety scanner
+  1. guarded landing safety scanner
   2. package tooling suite + validate-release (unit/mocked tests only)
   3. watcher unit/fixture suite
   4. docs static site build
@@ -125,7 +125,7 @@ def main(argv: list[str] | None = None) -> int:
 
     steps: list[tuple[str, list[str]]] = [
         (
-            "merge-ready safety scanner",
+            "guarded landing safety scanner",
             [python, "-B", str(scripts / "check-merge-ready-safety.py"), "--root", str(root)],
         ),
         (

@@ -1,4 +1,4 @@
-# OpenAI directory submission materials (v0.2.1)
+# OpenAI directory submission materials (v0.3.0)
 
 This directory holds form inputs and validation fixtures for the PR Completion OpenAI plugin-directory draft under the verified **Business — Traycer** identity. It follows the official [Submit plugins](https://learn.chatgpt.com/docs/submit-plugins) workflow.
 
@@ -19,14 +19,14 @@ From a clean checkout:
 # Pre-tag / local portal ZIP from the current tree (default mode)
 python3 -B scripts/package-openai-submission.py
 
-# After publication, reconstruct and verify the immutable v0.2.1 source and public URLs
+# After publication and pinning, reconstruct and verify the immutable v0.3.0 source and public URLs
 python3 -B scripts/package-openai-submission.py --from-pinned-release --check-urls
 ```
 
 Outputs under ignored `submission-out/`:
 
-- `pr-completion-0.2.1-portal-plugin.zip` — **upload this** on the portal Skills tab. It contains only `.codex-plugin/plugin.json`, runtime skill files, and referenced square light/dark visual assets under one top-level directory. Tests, fixtures, CI, docs, release scripts, submission materials, and alternate-harness manifests are excluded.
-- `pr-completion-0.2.1-openai-materials.zip` — auditable copy of form inputs and fixtures; do not upload this as the skill bundle.
+- `pr-completion-0.3.0-portal-plugin.zip` — **upload this after release publication** on the portal Skills tab. It contains only `.codex-plugin/plugin.json`, runtime skill files, and referenced square light/dark visual assets under one top-level directory. Tests, fixtures, CI, docs, release scripts, submission materials, and alternate-harness manifests are excluded.
+- `pr-completion-0.3.0-openai-materials.zip` — auditable copy of form inputs and fixtures; do not upload this as the skill bundle.
 - `SHA256SUMS.txt` and `validation-report.json` — integrity and validation evidence.
 
 ## Portal mapping
@@ -36,7 +36,7 @@ Outputs under ignored `submission-out/`:
 | Create plugin | Choose **Skills only** |
 | Developer identity | **Business — Traycer** |
 | Info | `listing.json`, `assets/logo.png` |
-| Skills | Generated `pr-completion-0.2.1-portal-plugin.zip` |
+| Skills | Generated `pr-completion-0.3.0-portal-plugin.zip` |
 | Prompts | `starter-prompts.json` |
 | Testing | `test-cases.json` (five positive, three negative) |
 | Global | `availability.md` |

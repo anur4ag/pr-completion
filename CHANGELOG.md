@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added the v0.3.0 autonomous landing contract: direct commit-skill invocation hands off to push, PR creation, and the watcher unless the user explicitly requests local-only work.
+- Added `pr_land.py`, the sole guarded merge-state mutation helper, with fresh readiness validation, exact-head binding, explicit confirmation, normal protected auto-merge/queue requests, and no admin path.
+- Added watcher `awaiting_merge` and `authorization_stale` states through the CLI-only exact-head/mode/request-timestamp authorization binding; enrollment propagation is finite and bounded across restarts.
+- Landing plans now fingerprint the resolved readiness policy and its explicit config/no-config source, preserve CLI reviewer/check overrides, and revalidate merge-queue plus merge-method policy before mutation.
+
+### Changed
+
+- `take-pr-to-completion` now asks separately for every ready PR, infers repository landing policy when unambiguous, warns that approval may merge immediately, and observes approved requests until merged or blocked.
+- `commit-workspace-changes` now distinguishes direct lifecycle, phase-only child, and explicit local-only modes to continue automatically without recursive skill dispatch.
+
+### Safety
+
+- Replaced the blanket merge-ready-only scanner with a guarded-landing scanner that permits one structurally audited helper and rejects all other CLI/API/alias merge surfaces, force pushes, fixture-exemption bypasses, and missing confirmation/head guards.
+- A push or changed PR head invalidates every prior readiness result and landing approval. No admin, force-push, protection bypass, history rewrite, or REST/GraphQL merge mutation is authorized.
+
 ### Release metadata
 
 - Pinned the immutable v0.2.1 tag commit, installable ZIP, portal ZIP, and portable content fingerprint after public release publication.

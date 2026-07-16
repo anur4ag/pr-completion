@@ -35,17 +35,17 @@ claude plugin install pr-completion@pr-completion --scope user
 
 Use `--scope user` for a personal install. Claude Code also supports `project` and `local` scopes.
 
-### Pin v0.2.1
+### Pin v0.3.0
 
 ```bash
-claude plugin marketplace add anur4ag/pr-completion@v0.2.1
+claude plugin marketplace add anur4ag/pr-completion@v0.3.0
 claude plugin install pr-completion@pr-completion --scope user
 ```
 
 Equivalent Git URL form:
 
 ```bash
-claude plugin marketplace add https://github.com/anur4ag/pr-completion.git#v0.2.1
+claude plugin marketplace add https://github.com/anur4ag/pr-completion.git#v0.3.0
 claude plugin install pr-completion@pr-completion --scope user
 ```
 
@@ -76,17 +76,17 @@ codex plugin marketplace add anur4ag/pr-completion
 codex plugin add pr-completion@pr-completion
 ```
 
-### Pin v0.2.1
+### Pin v0.3.0
 
 ```bash
-codex plugin marketplace add anur4ag/pr-completion@v0.2.1
+codex plugin marketplace add anur4ag/pr-completion@v0.3.0
 codex plugin add pr-completion@pr-completion
 ```
 
 Or pass the ref separately:
 
 ```bash
-codex plugin marketplace add anur4ag/pr-completion --ref v0.2.1
+codex plugin marketplace add anur4ag/pr-completion --ref v0.3.0
 codex plugin add pr-completion@pr-completion
 ```
 
@@ -134,8 +134,9 @@ Codex development may use `scripts/stage-codex-dev-install.py` to create a tempo
 1. Open a repository with an open PR or task-related local changes.
 2. Confirm `gh auth status` succeeds for the PR host.
 3. Ask the agent to run `$pr-completion:take-pr-to-completion`.
-4. Read the terminal state: `ready`, `auto_merge`, `merged`, or `blocked`.
-5. Merge with your own process if desired. PR Completion does not merge.
+4. Let it commit, push, create/find the PR, and handle normal watcher cycles.
+5. At `ready`, approve or decline the prompt for that PR and exact head SHA. The prompt warns that approval may merge immediately.
+6. After approval, read the terminal state: `merged` or `blocked`. If you decline, the result remains `ready`.
 
 ## Troubleshooting
 
@@ -167,4 +168,4 @@ Codex development may use `scripts/stage-codex-dev-install.py` to create a tempo
 
 - [Skills and safety](skills.md)
 - [Support](support.md)
-- [Release v0.2.1](https://github.com/anur4ag/pr-completion/releases/tag/v0.2.1)
+- [Release v0.3.0](https://github.com/anur4ag/pr-completion/releases/tag/v0.3.0) (pending until publication)

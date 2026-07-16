@@ -1,12 +1,12 @@
 # PR Completion
 
-A local skills plugin for Claude Code and Codex that prepares a GitHub pull request, watches its gates, repairs actionable failures, and stops at verified merge readiness.
+A local skills plugin for Claude Code and Codex that prepares a GitHub pull request, watches its gates, repairs actionable failures, and—only with explicit per-PR approval—requests a protected landing and observes it to completion.
 
-It can validate and commit workspace changes, push in-scope commits, monitor CI and reviews, triage feedback, and resolve conflicts. Its terminal report describes the current head; it does not perform the merge.
+It validates and commits workspace changes, creates or finds PRs, monitors CI and reviews, triages feedback, and resolves conflicts. Direct use of the commit skill continues into this lifecycle unless you say local-only or commit-only.
 
 <div class="callout">
 
-**Safety boundary.** Success means the current PR head is merge-ready. PR Completion never merges, enables or disables auto-merge, enters a merge queue, force-pushes, or bypasses branch protection. Auto-merge enabled by another actor is observed and reported only.
+**Safety boundary.** Routine autonomy reaches a verified-ready exact head. Landing requires a separate confirmation for each PR, warns that approval may merge immediately, and is revalidated before the guarded request. PR Completion never uses admin or protection bypass, force-push, history rewrite, or direct merge APIs.
 
 </div>
 
@@ -32,8 +32,8 @@ See [Installation](installation.md) for version pinning, updates, local developm
 
 | Skill | Run it when |
 | --- | --- |
-| `take-pr-to-completion` | You want the full commit, watch, review, and conflict loop to continue until the PR is ready or blocked. |
-| `commit-workspace-changes` | Local task changes need to be discovered, checked, and committed across repositories or submodules. |
+| `take-pr-to-completion` | You want preparation, watcher repairs, per-PR landing confirmation, and observation until merged or blocked. |
+| `commit-workspace-changes` | Local changes need checks and commits; direct use normally hands off into PR creation and monitoring unless explicitly local-only. |
 | `gh-review-comment-triage` | Review threads need to be checked against current code, fixed when real, and resolved with evidence. |
 | `merge-conflict-resolution` | A merge, rebase, cherry-pick, or revert is conflicted and both sides' intent must be preserved. |
 
@@ -46,10 +46,11 @@ The orchestrator repeatedly observes the PR and emits one machine-readable state
 ```text
 pending -> actionable -> repair -> new head -> re-observe
                          |
-                         +-> ready | auto_merge | merged | blocked
+                         +-> ready -> confirm exact PR/head -> awaiting_merge -> merged
+                                  \-> stop at ready                 \-> blocked
 ```
 
-Every push invalidates the previous observation. `ready` is calculated again for the new head from required checks, current approvals, unresolved review threads, and mergeability. `auto_merge` means another actor already enabled it; the plugin does not change that setting.
+Every push invalidates the previous observation and any landing confirmation. `ready` is recalculated from checks, approvals, unresolved threads, and mergeability. `auto_merge` means another actor already configured it. `awaiting_merge` is emitted only after an approved request bound to the exact head.
 
 The autonomous loop launches the watcher in the background, consumes its single new observation on exit, dispatches repairs, and relaunches with the same cursor. An optional NDJSON observations file preserves emitted output across harness session recycling. A bot's standing `CHANGES_REQUESTED` decision is treated as a wait state while the current head has no unresolved review threads and checks are still pending.
 
@@ -68,7 +69,7 @@ Target repositories must also have their own build, lint, test, and hook depende
 ## Project reference
 
 - [Repository](https://github.com/anur4ag/pr-completion)
-- [Release v0.2.1](https://github.com/anur4ag/pr-completion/releases/tag/v0.2.1)
+- [Release v0.3.0](https://github.com/anur4ag/pr-completion/releases/tag/v0.3.0) (pending until publication)
 - [Skills and safety](skills.md)
 - [Support](support.md)
 - [Privacy](privacy.md)

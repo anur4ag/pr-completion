@@ -1,18 +1,18 @@
-# PR Completion v0.2.1
+# PR Completion v0.3.0
 
-Light and dark logo refresh under the verified **Business — Traycer** publisher identity.
+Autonomous landing contract under the verified **Business — Traycer** publisher identity.
 
 ## Changes
 
-- Replace the prior generic Traycer icon with a dedicated PR Completion logo.
-- Add separate light- and dark-mode logo assets through `interface.logo` and `interface.logoDark`.
-- Keep the light logo as the composer icon because the current manifest schema has no separate dark composer-icon field.
-- Preserve deterministic minimal portal packaging below the 1 MiB upload guard.
+- Direct commit-skill use now continues through push, PR creation, and monitoring unless the user explicitly asks for local-only work.
+- Every ready PR receives a separate exact-head landing prompt with an immediate-merge warning.
+- A guarded helper rechecks readiness and head identity before requesting normal protected auto-merge or a required merge-queue entry.
+- The watcher adds `awaiting_merge`, verifies that the accepted auto-merge or queue enrollment remains active for the authorized head, and keeps observing until exact-head merge or a blocker.
 
-## Safety (unchanged)
+## Safety
 
-The safety boundary remains strict: the plugin never merges, enables or disables auto-merge, joins a merge queue, bypasses protections, force-pushes, or rewrites history. Terminal success is verified merge readiness only.
+Landing approval is never implicit, shared across PRs, or reused after a head change. The plugin never uses admin/protection bypass, force-push, history rewrite, direct merge APIs, or alternate merge commands. A submitted request is not reported as merged until the read-only watcher observes it.
 
 ## Upload artifact
 
-Use `pr-completion-0.2.1-portal-plugin.zip`. It is intentionally smaller than the full installable release ZIP while remaining deterministically derived from the same source. Do not upload the manifest-free skills-source archive.
+Use `pr-completion-0.3.0-portal-plugin.zip` after the v0.3.0 release is published and its immutable pins are populated. Do not upload the manifest-free skills-source archive.
