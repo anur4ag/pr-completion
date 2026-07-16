@@ -296,6 +296,10 @@ class PortalPackageValidationTests(unittest.TestCase):
                     "skills/commit-workspace-changes/SKILL.md",
                     "skills/commit-workspace-changes/agents/openai.yaml",
                     "skills/gh-review-comment-triage/SKILL.md",
+                    "skills/gh-review-comment-triage/agents/openai.yaml",
+                    "skills/gh-review-comment-triage/references/acceptance-matrix.md",
+                    "skills/gh-review-comment-triage/references/trust-and-verdict-contract.md",
+                    "skills/gh-review-comment-triage/scripts/fetch_review_threads.py",
                     "skills/merge-conflict-resolution/SKILL.md",
                     "skills/take-pr-to-completion/SKILL.md",
                     "skills/take-pr-to-completion/agents/openai.yaml",
@@ -398,7 +402,7 @@ class PortalPackageValidationTests(unittest.TestCase):
             )
             self.assertTrue(portal.is_file())
             layout = submission.inspect_portal_zip_layout(portal)
-            self.assertEqual(layout["members"], 11)
+            self.assertEqual(layout["members"], 15)
 
     def test_portal_zip_over_one_mib_is_rejected_and_removed(self) -> None:
         members = {
