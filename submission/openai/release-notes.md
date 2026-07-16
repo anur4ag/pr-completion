@@ -15,4 +15,4 @@ Landing approval is never implicit, shared across PRs, or reused after a head ch
 
 ## Upload artifact
 
-Use `pr-completion-0.3.0-portal-plugin.zip` after the v0.3.0 release is published and its immutable pins are populated. Do not upload the manifest-free skills-source archive.
+Use `pr-completion-0.3.0-portal-plugin.zip` from the published v0.3.0 release. Do not upload the manifest-free skills-source archive.

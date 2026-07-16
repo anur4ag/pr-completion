@@ -4,7 +4,7 @@ Autonomous pull request preparation and explicitly approved landing for [Claude 
 
 Validate and commit local work, create or find its GitHub PR, then drive it through CI, review triage, and conflicts. At **verified readiness**, PR Completion asks for explicit confirmation for that PR and exact head before requesting auto-merge or a required merge-queue entry, then watches until merged or blocked.
 
-> **Status.** Source package `VERSION` `0.3.0` is the release candidate. Its [`v0.3.0`](https://github.com/anur4ag/pr-completion/releases/tag/v0.3.0) link and pinned install become live only after publication.
+> **Status.** Source package `VERSION` `0.3.0` is published as [`v0.3.0`](https://github.com/anur4ag/pr-completion/releases/tag/v0.3.0) with immutable installable, skills-source, and portal artifacts plus SHA-256 checksums.
 > Docs: [https://anur4ag.github.io/pr-completion/](https://anur4ag.github.io/pr-completion/).
 > Directory publisher identity: **Business — Traycer**. OpenAI portal upload remains a user-controlled step and is not claimed submitted or approved here.
 

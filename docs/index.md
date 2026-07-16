@@ -69,7 +69,7 @@ Target repositories must also have their own build, lint, test, and hook depende
 ## Project reference
 
 - [Repository](https://github.com/anur4ag/pr-completion)
-- [Release v0.3.0](https://github.com/anur4ag/pr-completion/releases/tag/v0.3.0) (pending until publication)
+- [Release v0.3.0](https://github.com/anur4ag/pr-completion/releases/tag/v0.3.0)
 - [Skills and safety](skills.md)
 - [Support](support.md)
 - [Privacy](privacy.md)

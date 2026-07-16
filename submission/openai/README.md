@@ -25,7 +25,7 @@ python3 -B scripts/package-openai-submission.py --from-pinned-release --check-ur
 
 Outputs under ignored `submission-out/`:
 
-- `pr-completion-0.3.0-portal-plugin.zip` — **upload this after release publication** on the portal Skills tab. It contains only `.codex-plugin/plugin.json`, runtime skill files, and referenced square light/dark visual assets under one top-level directory. Tests, fixtures, CI, docs, release scripts, submission materials, and alternate-harness manifests are excluded.
+- `pr-completion-0.3.0-portal-plugin.zip` — **upload this artifact** on the portal Skills tab. It contains only `.codex-plugin/plugin.json`, runtime skill files, and referenced square light/dark visual assets under one top-level directory. Tests, fixtures, CI, docs, release scripts, submission materials, and alternate-harness manifests are excluded.
 - `pr-completion-0.3.0-openai-materials.zip` — auditable copy of form inputs and fixtures; do not upload this as the skill bundle.
 - `SHA256SUMS.txt` and `validation-report.json` — integrity and validation evidence.
 
