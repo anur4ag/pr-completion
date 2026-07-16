@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Release metadata
+
+- Pinned the immutable v0.3.0 tag commit, installable ZIP, portal ZIP, and portable content fingerprint after public release publication.
+- Marked the v0.3.0 Pages release link public and advanced hosted immutable-tag validation to v0.3.0.
+
 ## [0.3.0] - 2026-07-17
 
 ### Added

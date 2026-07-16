@@ -168,4 +168,4 @@ Codex development may use `scripts/stage-codex-dev-install.py` to create a tempo
 
 - [Skills and safety](skills.md)
 - [Support](support.md)
-- [Release v0.3.0](https://github.com/anur4ag/pr-completion/releases/tag/v0.3.0) (pending until publication)
+- [Release v0.3.0](https://github.com/anur4ag/pr-completion/releases/tag/v0.3.0)
