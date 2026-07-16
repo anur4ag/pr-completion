@@ -376,6 +376,9 @@ class PortalPackageValidationTests(unittest.TestCase):
         self.assertIn('portal_zip_path = asset_dir / portal_name', workflow)
         self.assertIn('verify_published_portal_zip_bytes(portal_zip_path)', workflow)
         self.assertIn('missing required distinct portal asset', workflow)
+        self.assertIn('releases/download/${RELEASE_REF}', workflow)
+        self.assertIn('curl --fail --location --retry 4', workflow)
+        self.assertNotIn('gh release download', workflow)
 
     def test_default_cli_builds_current_minimal_portal_zip(self) -> None:
         with tempfile.TemporaryDirectory(prefix="openai-default-cli-") as temporary:

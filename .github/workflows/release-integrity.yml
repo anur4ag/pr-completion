@@ -53,7 +53,6 @@ jobs:
 
       - name: Download immutable release assets
         env:
-          GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
           RELEASE_REF: ${{ steps.release.outputs.ref }}
         run: |
@@ -62,19 +61,17 @@ jobs:
           mkdir -p "${ASSET_DIR}"
           INSTALLABLE="pr-completion-${RELEASE_VERSION}-plugin.zip"
           PORTAL="pr-completion-${RELEASE_VERSION}-portal-plugin.zip"
-          gh release download "${RELEASE_REF}" \
-            --repo "${{ github.repository }}" \
-            --dir "${ASSET_DIR}" \
-            --pattern "${INSTALLABLE}" \
-            --pattern 'SHA256SUMS.txt'
-          if gh release view "${RELEASE_REF}" \
-            --repo "${{ github.repository }}" \
-            --json assets \
-            --jq '.assets[].name' | grep -Fxq "${PORTAL}"; then
-            gh release download "${RELEASE_REF}" \
-              --repo "${{ github.repository }}" \
-              --dir "${ASSET_DIR}" \
-              --pattern "${PORTAL}"
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/download/${RELEASE_REF}"
+          curl --fail --location --retry 4 --retry-all-errors --retry-delay 2 \
+            --output "${ASSET_DIR}/${INSTALLABLE}" \
+            "${RELEASE_URL}/${INSTALLABLE}"
+          curl --fail --location --retry 4 --retry-all-errors --retry-delay 2 \
+            --output "${ASSET_DIR}/SHA256SUMS.txt" \
+            "${RELEASE_URL}/SHA256SUMS.txt"
+          if curl --fail --location --retry 4 --retry-all-errors --retry-delay 2 \
+            --output "${ASSET_DIR}/${PORTAL}" \
+            "${RELEASE_URL}/${PORTAL}"; then
+            :
           elif [[ "${RELEASE_VERSION}" == "0.1.1" ]]; then
             # Historical v0.1.1 used the full plugin artifact for portal upload.
             cp "${ASSET_DIR}/${INSTALLABLE}" "${ASSET_DIR}/${PORTAL}"
