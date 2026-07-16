@@ -1,7 +1,7 @@
 {
   "name": "pr-completion",
-  "version": "0.2.1",
-  "description": "Validate and commit local changes, then deterministically watch GitHub pull requests through CI, reviews, conflicts, and verified merge readiness.",
+  "version": "0.3.0",
+  "description": "Validate and commit local changes, create and watch GitHub pull requests, then request an explicitly approved landing for each exact ready head.",
   "author": {
     "name": "Traycer",
     "url": "https://github.com/anur4ag"
@@ -19,8 +19,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "PR Completion",
-    "shortDescription": "Autonomously drive pull requests to verified merge readiness",
-    "longDescription": "Discover changed repositories, create validated commits, run a configurable PR state-machine watcher, triage review rounds, resolve upstream conflicts safely, and stop at verified merge readiness without merging or enabling auto-merge.",
+    "shortDescription": "Autonomously prepare, watch, and explicitly land pull requests",
+    "longDescription": "Discover changed repositories, create validated commits and pull requests, run a deterministic state-machine watcher, repair CI and review failures, resolve conflicts, request per-PR confirmation for the exact ready head, and observe an approved protected landing until merged or blocked.",
     "developerName": "Traycer",
     "category": "Productivity",
     "capabilities": [
@@ -34,7 +34,7 @@
     "logo": "./assets/traycer-icon.png",
     "logoDark": "./assets/traycer-icon-dark.png",
     "defaultPrompt": [
-      "Use $pr-completion:take-pr-to-completion to autonomously drive this pull request through CI, review, and conflicts until it is verified merge-ready. Do not merge or enable auto-merge."
+      "Use $pr-completion:take-pr-to-completion to prepare and watch each pull request, ask me for per-PR landing confirmation at verified readiness, then observe any approved landing until merged or blocked."
     ]
   }
 }

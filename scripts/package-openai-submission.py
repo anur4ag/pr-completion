@@ -729,6 +729,9 @@ def validate_cases(
         extracted = Path(temporary) / "package"
         _extract_members(extracted, members)
         watcher = extracted / "skills/take-pr-to-completion/scripts/pr_watch.py"
+        lander = watcher.with_name("pr_land.py")
+        if not lander.is_file():
+            raise SubmissionError("case package is missing pr_land.py")
         for case in cases:
             for required in (
                 "id",
@@ -813,6 +816,44 @@ def validate_cases(
                             "actionTypes": action_types,
                         }
                     )
+                elif check_type == "landingFixture":
+                    fixture_data = _source_bytes(check["fixture"], materials_root, members)
+                    fixture = Path(temporary) / f"{case['id']}-landing.json"
+                    fixture.write_bytes(fixture_data)
+                    command = [
+                        sys.executable,
+                        "-B",
+                        str(lander),
+                        "--fixture",
+                        str(fixture),
+                        "--head",
+                        check["head"],
+                        "--mode",
+                        check.get("mode", "auto"),
+                    ]
+                    if check.get("method"):
+                        command.extend(["--method", check["method"]])
+                    completed = subprocess.run(
+                        command,
+                        cwd=str(extracted),
+                        capture_output=True,
+                        text=True,
+                        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+                        check=False,
+                    )
+                    observation = json.loads(completed.stdout)
+                    if observation.get("state") != check["expectedState"]:
+                        raise SubmissionError(
+                            f"case {case['id']} landing state "
+                            f"{observation.get('state')!r} != {check['expectedState']!r}"
+                        )
+                    check_results.append(
+                        {
+                            "type": check_type,
+                            "status": "passed",
+                            "state": observation.get("state"),
+                        }
+                    )
                 else:
                     raise SubmissionError(
                         f"case {case['id']} has unknown check type {check_type!r}"
@@ -826,7 +867,7 @@ def check_urls(urls: list[str]) -> list[dict[str, Any]]:
     for url in urls:
         request = urllib.request.Request(
             url,
-            headers={"User-Agent": "pr-completion-openai-submission-validator/0.2.1"},
+            headers={"User-Agent": "pr-completion-openai-submission-validator/0.3.0"},
         )
         try:
             with urllib.request.urlopen(request, timeout=20) as response:
@@ -923,6 +964,9 @@ def validate_extracted_portal_runtime(
         )
         if not watcher.is_file():
             raise SubmissionError("extracted portal ZIP is missing pr_watch.py")
+        lander = watcher.with_name("pr_land.py")
+        if not lander.is_file():
+            raise SubmissionError("extracted portal ZIP is missing pr_land.py")
         fixture = root / "ready-to-merge.json"
         fixture.write_bytes(fixture_bytes)
         run_cwd = root / "third-party-repository"
@@ -950,10 +994,44 @@ def validate_extracted_portal_runtime(
             raise SubmissionError(
                 "extracted portal watcher did not produce ready with no actions"
             )
+        landing = subprocess.run(
+            [
+                sys.executable,
+                "-B",
+                str(lander),
+                "--fixture",
+                str(fixture),
+                "--head",
+                "head-ready",
+                "--mode",
+                "auto",
+                "--method",
+                "squash",
+            ],
+            cwd=run_cwd,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            check=False,
+        )
+        if landing.returncode != 0:
+            raise SubmissionError(
+                "extracted portal landing plan failed with exit "
+                f"{landing.returncode}: {landing.stderr.strip()}"
+            )
+        try:
+            landing_plan = json.loads(landing.stdout)
+        except json.JSONDecodeError as error:
+            raise SubmissionError("extracted portal landing helper emitted invalid JSON") from error
+        if landing_plan.get("state") != "confirmation_required" or not landing_plan.get(
+            "requiresConfirmation"
+        ):
+            raise SubmissionError("extracted portal landing helper skipped confirmation")
         return {
             "skills": sorted(discovered_skills),
             "watcherState": observation["state"],
             "watcherActions": observation["actions"],
+            "landingPlanState": landing_plan["state"],
         }
 
 

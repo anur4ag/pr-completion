@@ -173,6 +173,63 @@ class PackageReleaseDeterminismTests(unittest.TestCase):
         with self.assertRaises(package_mod.PackageError):
             package_mod.package_release(self.source, self.base / "bad")
 
+    def test_in_repo_skill_symlink_is_rejected(self) -> None:
+        alias = self.source / "skills" / "take-pr-to-completion" / "scripts" / "alias.py"
+        try:
+            alias.symlink_to(alias.with_name("pr_watch.py"))
+        except OSError as error:
+            self.skipTest(f"symlinks unavailable on this platform: {error}")
+        with self.assertRaisesRegex(package_mod.PackageError, "symlink release member"):
+            package_mod.package_release(self.source, self.base / "symlink-in-repo")
+
+    def test_out_of_root_skill_symlink_is_rejected(self) -> None:
+        outside = self.base / "outside.py"
+        outside.write_text("print('outside')\n", encoding="utf-8")
+        alias = self.source / "skills" / "take-pr-to-completion" / "scripts" / "alias.py"
+        try:
+            alias.symlink_to(outside)
+        except OSError as error:
+            self.skipTest(f"symlinks unavailable on this platform: {error}")
+        with self.assertRaisesRegex(package_mod.PackageError, "symlink release member"):
+            package_mod.package_release(self.source, self.base / "symlink-outside")
+
+    def test_zip_writer_rejects_out_of_root_symlinked_ancestor(self) -> None:
+        outside = self.base / "outside-dir"
+        outside.mkdir()
+        (outside / "runner.py").write_text("print('outside')\n", encoding="utf-8")
+        linked = self.source / "skills" / "linked"
+        try:
+            linked.symlink_to(outside, target_is_directory=True)
+        except OSError as error:
+            self.skipTest(f"symlinks unavailable on this platform: {error}")
+        with self.assertRaisesRegex(package_mod.PackageError, "symlink release member or ancestor"):
+            package_mod.write_deterministic_zip(
+                self.base / "ancestor.zip",
+                root=self.source,
+                members=["skills/linked/runner.py"],
+                archive_root="plugin",
+            )
+
+    def test_git_discovery_rejects_replaced_tracked_directory_ancestor(self) -> None:
+        tracked = self.source / "skills" / "linked" / "runner.py"
+        tracked.parent.mkdir()
+        tracked.write_text("print('tracked')\n", encoding="utf-8")
+        subprocess.run(["git", "init", "-q", str(self.source)], check=True)
+        subprocess.run(
+            ["git", "-C", str(self.source), "add", "skills/linked/runner.py"],
+            check=True,
+        )
+        shutil.rmtree(tracked.parent)
+        outside = self.base / "replacement"
+        outside.mkdir()
+        (outside / "runner.py").write_text("print('outside')\n", encoding="utf-8")
+        try:
+            tracked.parent.symlink_to(outside, target_is_directory=True)
+        except OSError as error:
+            self.skipTest(f"symlinks unavailable on this platform: {error}")
+        with self.assertRaisesRegex(package_mod.PackageError, "symlink release member or ancestor"):
+            package_mod.list_via_git(self.source)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,4 +1,4 @@
-"""Watcher and merge-ready safety regressions.
+"""Watcher and guarded autonomous-landing safety regressions.
 
 Forbidden mutation payloads used as scanner inputs live under
 tests/safety-scanner-fixtures/ (data-only, marker + path-aware exemption).
@@ -23,6 +23,7 @@ SAFETY_SCRIPT = PLUGIN_ROOT / "scripts" / "check-merge-ready-safety.py"
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 SAFETY_FIXTURES = Path(__file__).resolve().parent / "safety-scanner-fixtures"
 SKILL_MD = SKILL_ROOT / "SKILL.md"
+LANDER_PATH = SKILL_ROOT / "scripts" / "pr_land.py"
 
 
 SPEC = importlib.util.spec_from_file_location("pr_watch", SCRIPT_PATH)
@@ -60,11 +61,17 @@ def settings(
         discover="current",
         max_depth=4,
         check_policy="all",
+        policy_source="defaults",
+        config_path=None,
         strict_changes_requested=strict_changes_requested,
         required_reviewers=tuple(reviewers),
         targets=(),
         cursor_path=cursor_path,
         observations_path=observations_path,
+        await_merge_head=None,
+        await_merge_mode=None,
+        await_merge_since=None,
+        await_merge_grace_seconds=60,
         fixture=fixture,
         pretty=False,
         verbose=False,
@@ -314,6 +321,136 @@ class PullRequestStateTests(unittest.TestCase):
         # Pending gates remain visible for reporting but do not reclassify state.
         self.assertTrue(value["targets"][0]["pending"] or value["targets"][0]["checks"]["pending"])
 
+    def test_await_merge_overrides_external_auto_merge_terminal_state(self):
+        raw = json.loads((FIXTURES / "external-auto-merge.json").read_text())
+        current_head = raw["targets"][0]["pr"]["headRefOid"]
+        configured = settings()
+        configured = pr_watch.Settings(
+            **{
+                **configured.__dict__,
+                "await_merge_head": current_head,
+                "await_merge_mode": "auto",
+            }
+        )
+        value = pr_watch.snapshot(raw["targets"], configured)
+
+        self.assertEqual(value["state"], "awaiting_merge")
+        self.assertEqual(value["actions"], [])
+        self.assertEqual(
+            value["targets"][0]["pending"][0]["type"], "merge_completion"
+        )
+        self.assertTrue(value["targets"][0]["landingAuthorization"]["current"])
+
+    def test_await_merge_blocks_when_auto_merge_enrollment_disappears(self):
+        raw = json.loads((FIXTURES / "ready-to-merge.json").read_text())
+        configured = settings()
+        configured = pr_watch.Settings(
+            **{
+                **configured.__dict__,
+                "await_merge_head": "head-ready",
+                "await_merge_mode": "auto",
+            }
+        )
+        value = pr_watch.snapshot(raw["targets"], configured)
+
+        self.assertEqual(value["state"], "blocked")
+        self.assertEqual(value["actions"][0]["type"], "landing_enrollment_missing")
+
+    def test_await_merge_allows_bounded_enrollment_propagation_grace(self):
+        raw = json.loads((FIXTURES / "ready-to-merge.json").read_text())
+        configured = settings()
+        configured = pr_watch.Settings(
+            **{
+                **configured.__dict__,
+                "await_merge_head": "head-ready",
+                "await_merge_mode": "auto",
+            }
+        )
+        value = pr_watch.snapshot(
+            raw["targets"], configured, allow_missing_landing_evidence=True
+        )
+
+        self.assertEqual(value["state"], "awaiting_merge")
+        self.assertTrue(value["targets"][0]["pending"][0]["evidencePending"])
+
+    def test_await_merge_queue_requires_current_enrollment(self):
+        raw = json.loads((FIXTURES / "ready-to-merge.json").read_text())
+        raw["targets"][0]["mergeQueueEntry"] = {
+            "id": "MQE_1",
+            "state": "QUEUED",
+            "position": 2,
+            "headCommit": {"oid": "head-ready"},
+        }
+        configured = settings()
+        configured = pr_watch.Settings(
+            **{
+                **configured.__dict__,
+                "await_merge_head": "head-ready",
+                "await_merge_mode": "queue",
+            }
+        )
+        value = pr_watch.snapshot(raw["targets"], configured)
+
+        self.assertEqual(value["state"], "awaiting_merge")
+        self.assertEqual(
+            value["targets"][0]["pr"]["mergeQueueEntry"]["state"], "QUEUED"
+        )
+
+    def test_await_merge_blocks_when_queue_enrollment_disappears(self):
+        raw = json.loads((FIXTURES / "ready-to-merge.json").read_text())
+        configured = settings()
+        configured = pr_watch.Settings(
+            **{
+                **configured.__dict__,
+                "await_merge_head": "head-ready",
+                "await_merge_mode": "queue",
+            }
+        )
+        value = pr_watch.snapshot(raw["targets"], configured)
+
+        self.assertEqual(value["state"], "blocked")
+        self.assertEqual(value["actions"][0]["type"], "landing_enrollment_missing")
+
+    def test_await_merge_blocks_rejected_queue_enrollment(self):
+        raw = json.loads((FIXTURES / "ready-to-merge.json").read_text())
+        raw["targets"][0]["mergeQueueEntry"] = {
+            "id": "MQE_1",
+            "state": "UNMERGEABLE",
+            "position": 2,
+            "headCommit": {"oid": "head-ready"},
+        }
+        configured = settings()
+        configured = pr_watch.Settings(
+            **{
+                **configured.__dict__,
+                "await_merge_head": "head-ready",
+                "await_merge_mode": "queue",
+            }
+        )
+        value = pr_watch.snapshot(raw["targets"], configured)
+
+        self.assertEqual(value["state"], "blocked")
+        self.assertEqual(value["actions"][0]["type"], "landing_enrollment_rejected")
+        self.assertEqual(value["actions"][0]["queueState"], "UNMERGEABLE")
+
+    def test_await_merge_blocks_when_authorized_head_is_stale(self):
+        raw = json.loads((FIXTURES / "ready-to-merge.json").read_text())
+        configured = settings()
+        configured = pr_watch.Settings(
+            **{
+                **configured.__dict__,
+                "await_merge_head": "older-head",
+                "await_merge_mode": "auto",
+            }
+        )
+        value = pr_watch.snapshot(raw["targets"], configured)
+
+        self.assertEqual(value["state"], "blocked")
+        action = value["actions"][0]
+        self.assertEqual(action["type"], "authorization_stale")
+        self.assertEqual(action["expectedHead"], "older-head")
+        self.assertEqual(action["currentHead"], "head-ready")
+
     def test_external_auto_merge_with_failing_ci_is_terminal(self):
         value = self.fixture_snapshot("external-auto-merge-failing-ci.json")
         self.assertEqual(value["state"], "auto_merge")
@@ -339,6 +476,36 @@ class PullRequestStateTests(unittest.TestCase):
         self.assertEqual(pr_watch.exit_code(value["state"]), pr_watch.EXIT_OBSERVED)
         self.assertEqual(value["actions"], [])
         self.assertEqual(value["targets"][0]["pr"]["state"], "MERGED")
+
+    def test_await_merge_observes_merged_as_terminal_success(self):
+        raw = json.loads((FIXTURES / "merged.json").read_text())
+        configured = settings()
+        configured = pr_watch.Settings(
+            **{
+                **configured.__dict__,
+                "await_merge_head": "head-merged",
+                "await_merge_mode": "auto",
+            }
+        )
+        value = pr_watch.snapshot(raw["targets"], configured)
+
+        self.assertEqual(value["state"], "merged")
+        self.assertEqual(value["actions"], [])
+
+    def test_await_merge_rejects_different_merged_head(self):
+        raw = json.loads((FIXTURES / "merged.json").read_text())
+        configured = settings()
+        configured = pr_watch.Settings(
+            **{
+                **configured.__dict__,
+                "await_merge_head": "authorized-head",
+                "await_merge_mode": "auto",
+            }
+        )
+        value = pr_watch.snapshot(raw["targets"], configured)
+
+        self.assertEqual(value["state"], "blocked")
+        self.assertEqual(value["actions"][0]["type"], "authorization_stale")
 
     def test_blocked_state_uses_nonzero_exit(self):
         value = self.fixture_snapshot("blocked.json")
@@ -402,6 +569,23 @@ class PullRequestStateTests(unittest.TestCase):
 
 
 class ConfigurationTests(unittest.TestCase):
+    def test_no_config_policy_source_is_reported_and_suppresses_discovery(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".pr-completion.json").write_text(
+                json.dumps({"version": 1, "checkPolicy": "required"}),
+                encoding="utf-8",
+            )
+            args = pr_watch.argument_parser().parse_args(["--no-config"])
+            value = pr_watch.build_settings(args, root)
+            resolved = pr_watch.resolved_config(value)
+
+        self.assertEqual(value.check_policy, "all")
+        self.assertEqual(value.policy_source, "no-config")
+        self.assertIsNone(value.config_path)
+        self.assertEqual(resolved["policySource"], "no-config")
+        self.assertIsNone(resolved["configPath"])
+
     def test_default_cursor_uses_repository_git_directory(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -492,6 +676,67 @@ class ConfigurationTests(unittest.TestCase):
                 str((root / "override-observations.ndjson").resolve()),
             )
 
+    def test_await_merge_is_cli_only_and_single_target(self):
+        parser = pr_watch.argument_parser()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            args = parser.parse_args(
+                [
+                    "--no-config",
+                    "--target",
+                    ".=1",
+                    "--target",
+                    ".=2",
+                    "--await-merge",
+                    "head-ready",
+                    "--await-merge-mode",
+                    "auto",
+                ]
+            )
+            with self.assertRaisesRegex(pr_watch.WatchError, "exactly one"):
+                pr_watch.build_settings(args, root)
+
+    def test_await_merge_grace_is_finite_and_capped(self):
+        parser = pr_watch.argument_parser()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for invalid in ("inf", "nan", "60.1"):
+                args = parser.parse_args(
+                    [
+                        "--no-config",
+                        "--target",
+                        ".=1",
+                        "--await-merge",
+                        "head-ready",
+                        "--await-merge-mode",
+                        "auto",
+                        "--await-merge-since",
+                        "2026-01-01T00:00:00Z",
+                        "--await-merge-grace",
+                        invalid,
+                    ]
+                )
+                with self.assertRaises(pr_watch.WatchError, msg=invalid):
+                    pr_watch.build_settings(args, root)
+
+    def test_await_merge_requires_durable_request_timestamp(self):
+        parser = pr_watch.argument_parser()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            args = parser.parse_args(
+                [
+                    "--no-config",
+                    "--target",
+                    ".=1",
+                    "--await-merge",
+                    "head-ready",
+                    "--await-merge-mode",
+                    "auto",
+                ]
+            )
+            with self.assertRaisesRegex(pr_watch.WatchError, "await-merge-since"):
+                pr_watch.build_settings(args, root)
+
 
 class BackgroundRunnerTests(unittest.TestCase):
     def test_actionable_observation_is_process_success_with_consumable_json(self):
@@ -551,6 +796,38 @@ class BackgroundRunnerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         value = json.loads(result.stdout)
         self.assertEqual(value["state"], "auto_merge")
+
+    def test_awaiting_merge_keeps_until_actionable_process_alive(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT_PATH),
+                "--mode",
+                "until-actionable",
+                "--fixture",
+                str(FIXTURES / "ready-to-merge.json"),
+                "--await-merge",
+                "head-ready",
+                "--await-merge-mode",
+                "auto",
+                "--await-merge-since",
+                pr_watch.utc_now(),
+                "--interval",
+                "0.01",
+                "--max-interval",
+                "0.01",
+                "--jitter",
+                "0",
+                "--timeout",
+                "0.04",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, pr_watch.EXIT_TIMEOUT, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["state"], "timeout")
 
     def test_blocked_observation_remains_process_failure(self):
         self.assertEqual(pr_watch.exit_code("blocked"), pr_watch.EXIT_BLOCKED)
@@ -711,7 +988,7 @@ class BackgroundRunnerTests(unittest.TestCase):
             )
 
 
-class MergeReadySafetyContractTests(unittest.TestCase):
+class GuardedLandingSafetyContractTests(unittest.TestCase):
     # Use the real skill text as the synthetic-bundle contract (already scanned).
     CONTRACT_SKILL = SKILL_MD.read_text(encoding="utf-8")
 
@@ -732,35 +1009,42 @@ class MergeReadySafetyContractTests(unittest.TestCase):
             body.append(line)
         return "\n".join(body).lstrip("\n") + ("\n" if body else "")
 
-    def test_skill_text_forbids_merge_mutations(self):
+    def test_skill_requires_per_pr_exact_head_confirmation(self):
         text = SKILL_MD.read_text(encoding="utf-8")
         lowered = text.lower()
-        self.assertIn("verified merge readiness", lowered)
-        self.assertIn("never mutates merge state", lowered)
-        self.assertIn("do not run `gh " + "pr " + "merge`", lowered)
-        self.assertIn("never force" + "-push", lowered)
-        self.assertNotIn("enable " + "auto-merge when", lowered)
-        self.assertNotIn("merge " + "immediately", lowered)
-        self.assertNotRegex(
-            text,
-            r"`ready`\s*:\s*enable\s+merge",
-            msg="ready state must not authorize enabling merge",
-        )
+        self.assertIn("explicit per-pr confirmation", lowered)
+        self.assertIn("current head sha", lowered)
+        self.assertIn("scripts/pr_land.py", lowered)
+        self.assertIn("may " + "merge " + "immediately", lowered)
+        self.assertIn("never use `--admin`", lowered)
+        self.assertIn("silence", lowered)
+        self.assertIn("--policy-digest", lowered)
+        self.assertIn("--await-merge-since", lowered)
 
     def test_skill_requires_background_json_consumption(self):
         text = SKILL_MD.read_text(encoding="utf-8")
-        self.assertIn("Always consume the emitted JSON before yielding", text)
-        self.assertIn("parse the final JSON object", text)
+        self.assertIn("always read and parse the durable output", text.lower())
+        self.assertIn("before yielding or ending the turn", text.lower())
 
     def test_skill_requires_restart_after_push(self):
         text = SKILL_MD.read_text(encoding="utf-8")
-        self.assertIn("After any push, the prior observation is stale", text)
-        self.assertIn("start a fresh one against the new head SHA", text)
+        self.assertIn("a push invalidates every prior observation", text.lower())
+        self.assertIn("relaunch against the new head", text.lower())
 
-    def test_skill_treats_external_auto_merge_as_terminal_before_dispatch(self):
+    def test_skill_observes_external_auto_merge_without_reconfiguration(self):
         text = SKILL_MD.read_text(encoding="utf-8")
-        self.assertIn("terminal and read-only", text.lower())
-        self.assertIn("structured provenance", text.lower())
+        self.assertIn("another actor already configured auto-merge", text.lower())
+        self.assertIn("never", text.lower())
+        self.assertIn("disable an externally configured landing action", text.lower())
+
+    def test_commit_skill_has_direct_handoff_and_phase_only_recursion_guard(self):
+        text = (
+            PLUGIN_ROOT / "skills" / "commit-workspace-changes" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("Direct lifecycle mode", text)
+        self.assertIn("Phase-only child mode", text)
+        self.assertIn("Explicit local-only mode", text)
+        self.assertIn("exactly once", text)
 
     def test_release_safety_check_passes_public_skill_bundle(self):
         self.assertTrue(SAFETY_SCRIPT.is_file(), SAFETY_SCRIPT)
@@ -779,6 +1063,10 @@ class MergeReadySafetyContractTests(unittest.TestCase):
             skill_dir.mkdir(parents=True)
             (root / ".claude-plugin").mkdir()
             (skill_dir / "SKILL.md").write_text(self.CONTRACT_SKILL, encoding="utf-8")
+            lander = skill_dir / "scripts" / "pr_land.py"
+            lander.parent.mkdir(parents=True, exist_ok=True)
+            lander.write_text(LANDER_PATH.read_text(encoding="utf-8"), encoding="utf-8")
+            lander.chmod(0o755)
             target = skill_dir / relative_path
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
@@ -795,6 +1083,40 @@ class MergeReadySafetyContractTests(unittest.TestCase):
             )
             return result.returncode, result.stderr
 
+    def _bundle_with_runtime_symlink(
+        self,
+        outside: bool,
+        alias_name: str = "alias.py",
+        broken: bool = False,
+    ) -> tuple[int, str]:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            skill_dir = root / "skills" / "take-pr-to-completion"
+            skill_dir.mkdir(parents=True)
+            (root / ".claude-plugin").mkdir()
+            (skill_dir / "SKILL.md").write_text(self.CONTRACT_SKILL, encoding="utf-8")
+            scripts = skill_dir / "scripts"
+            scripts.mkdir()
+            lander = scripts / "pr_land.py"
+            lander.write_text(LANDER_PATH.read_text(encoding="utf-8"), encoding="utf-8")
+            lander.chmod(0o755)
+            target = root / "missing.py" if broken else root / "outside.py" if outside else lander
+            if outside and not broken:
+                target.write_text("print('outside')\n", encoding="utf-8")
+                target.chmod(0o755)
+            alias = scripts / alias_name
+            try:
+                alias.symlink_to(target)
+            except OSError as error:
+                self.skipTest(f"symlinks unavailable on this platform: {error}")
+            result = subprocess.run(
+                [sys.executable, str(SAFETY_SCRIPT), "--root", str(root)],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            return result.returncode, result.stderr
+
     def test_release_safety_check_rejects_cli_merge(self):
         code, err = self._bundle_with(
             "scripts/bad.py",
@@ -802,6 +1124,49 @@ class MergeReadySafetyContractTests(unittest.TestCase):
         )
         self.assertEqual(code, 1, err)
         self.assertIn("gh " + "pr " + "merge", err)
+
+    def test_release_safety_check_rejects_in_repo_runtime_symlink(self):
+        code, err = self._bundle_with_runtime_symlink(outside=False)
+        self.assertEqual(code, 1, err)
+        self.assertIn("symlinks are forbidden", err)
+
+    def test_release_safety_check_rejects_out_of_root_runtime_symlink(self):
+        code, err = self._bundle_with_runtime_symlink(outside=True)
+        self.assertEqual(code, 1, err)
+        self.assertIn("symlinks are forbidden", err)
+
+    def test_release_safety_check_rejects_broken_excluded_suffix_symlink(self):
+        code, err = self._bundle_with_runtime_symlink(
+            outside=True,
+            alias_name="broken.pyc",
+            broken=True,
+        )
+        self.assertEqual(code, 1, err)
+        self.assertIn("symlinks are forbidden", err)
+
+    def test_release_safety_check_rejects_lander_without_confirmation_guard(self):
+        content = LANDER_PATH.read_text(encoding="utf-8").replace(
+            '"--confirm"', '"--approve-without-guard"'
+        )
+        code, err = self._bundle_with("scripts/pr_land.py", content)
+        self.assertEqual(code, 1, err)
+        self.assertIn("explicit confirmation flag", err)
+
+    def test_release_safety_check_rejects_lander_confirmation_control_flow_bypass(self):
+        content = LANDER_PATH.read_text(encoding="utf-8").replace(
+            "if not args.confirm:", "if False:", 1
+        )
+        code, err = self._bundle_with("scripts/pr_land.py", content)
+        self.assertEqual(code, 1, err)
+        self.assertIn("audited runtime digest changed", err)
+
+    def test_release_safety_check_rejects_second_merge_surface_in_lander(self):
+        content = LANDER_PATH.read_text(encoding="utf-8") + (
+            "\nUNSAFE = [\"g\" + \"h\", \"pr\", \"merge\", \"--admin\"]\n"
+        )
+        code, err = self._bundle_with("scripts/pr_land.py", content)
+        self.assertEqual(code, 1, err)
+        self.assertIn("no admin bypass", err)
 
     def test_release_safety_check_rejects_mixed_negation_bypass(self):
         code, err = self._bundle_with(
@@ -845,6 +1210,46 @@ class MergeReadySafetyContractTests(unittest.TestCase):
         argv_label = "python argv " + "gh " + "pr " + "merge"
         self.assertTrue(subprocess_label in err or argv_label in err, err)
 
+    def test_release_safety_check_rejects_constant_folded_python_merge(self):
+        code, err = self._bundle_with(
+            "scripts/bad.py",
+            'import subprocess\nsubprocess.run(["g" + "h", "pr", "merge", "--admin"])\n',
+        )
+        self.assertEqual(code, 1, err)
+        self.assertIn("gh " + "pr " + "merge", err)
+
+    def test_release_safety_check_rejects_subprocess_module_alias(self):
+        code, err = self._bundle_with(
+            "scripts/bad.py",
+            'import subprocess as sp\nsp.run(["g" + "h", "pr", "merge", "--admin"])\n',
+        )
+        self.assertEqual(code, 1, err)
+        self.assertIn("audited digest allowlist", err)
+
+    def test_release_safety_check_rejects_subprocess_function_alias(self):
+        code, err = self._bundle_with(
+            "scripts/bad.py",
+            'from subprocess import run\nrun(["g" + "h", "pr", "merge", "--admin"])\n',
+        )
+        self.assertEqual(code, 1, err)
+        self.assertIn("audited digest allowlist", err)
+
+    def test_release_safety_check_rejects_constant_folded_force_push(self):
+        code, err = self._bundle_with(
+            "scripts/bad.py",
+            'import subprocess\nsubprocess.run(["git", "push", "--" + "force", "origin", "HEAD"])\n',
+        )
+        self.assertEqual(code, 1, err)
+        self.assertIn("git " + "push " + "--" + "force", err)
+
+    def test_release_safety_check_rejects_unclassifiable_process_command(self):
+        code, err = self._bundle_with(
+            "scripts/bad.py",
+            'import subprocess\ncommand = get_command()\nsubprocess.run(command)\n',
+        )
+        self.assertEqual(code, 1, err)
+        self.assertIn("unclassifiable process command", err)
+
     def test_release_safety_check_rejects_wrapped_cli_merge(self):
         code, err = self._bundle_with(
             "scripts/bad.sh",
@@ -852,6 +1257,24 @@ class MergeReadySafetyContractTests(unittest.TestCase):
         )
         self.assertEqual(code, 1, err)
         self.assertIn("gh " + "pr " + "merge", err)
+
+    def test_release_safety_check_rejects_variable_expanded_shell_merge(self):
+        code, err = self._bundle_with(
+            "scripts/bad.sh",
+            "#!/bin/sh\ntool=gh\n$tool pr merge --squash\n",
+        )
+        self.assertEqual(code, 1, err)
+        self.assertIn("dynamic shell command", err)
+
+    def test_release_safety_check_rejects_quoted_shell_command_expansion(self):
+        for payload in (
+            'command="gh pr"\n$command merge 7\n',
+            'tool="gh"\n"$tool" pr merge --squash\n',
+            'tool="gh"\n"${tool}" pr merge --squash\n',
+        ):
+            code, err = self._bundle_with("scripts/bad.sh", "#!/bin/sh\n" + payload)
+            self.assertEqual(code, 1, err)
+            self.assertIn("audited digest allowlist", err)
 
     def test_release_safety_check_rejects_force_push(self):
         code, err = self._bundle_with(

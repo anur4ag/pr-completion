@@ -1,10 +1,10 @@
 # PR Completion
 
-Autonomous pull request preparation for [Claude Code](https://code.claude.com/) and [Codex](https://chatgpt.com/codex).
+Autonomous pull request preparation and explicitly approved landing for [Claude Code](https://code.claude.com/) and [Codex](https://chatgpt.com/codex).
 
-Validate and commit local work, then drive a GitHub PR through CI, review triage, and conflict resolution until the current head is **verified merge-ready**. The public workflow never merges, enables auto-merge, joins a merge queue, force-pushes, or bypasses branch protections.
+Validate and commit local work, create or find its GitHub PR, then drive it through CI, review triage, and conflicts. At **verified readiness**, PR Completion asks for explicit confirmation for that PR and exact head before requesting auto-merge or a required merge-queue entry, then watches until merged or blocked.
 
-> **Status.** Public dual-harness plugin at [`anur4ag/pr-completion`](https://github.com/anur4ag/pr-completion) (`VERSION` `0.2.1`).
+> **Status.** Source package `VERSION` `0.3.0` is the release candidate. Its [`v0.3.0`](https://github.com/anur4ag/pr-completion/releases/tag/v0.3.0) link and pinned install become live only after publication.
 > Docs: [https://anur4ag.github.io/pr-completion/](https://anur4ag.github.io/pr-completion/).
 > Directory publisher identity: **Business — Traycer**. OpenAI portal upload remains a user-controlled step and is not claimed submitted or approved here.
 
@@ -12,8 +12,8 @@ Validate and commit local work, then drive a GitHub PR through CI, review triage
 
 | Skill | Authority |
 | --- | --- |
-| `take-pr-to-completion` | Orchestrates the PR lifecycle. Commits, pushes, CI repair, review triage, and conflict resolution are in scope. **Merge-state mutation is never in scope.** |
-| `commit-workspace-changes` | Discovers task-related changes across repos/submodules, runs derived checks, and creates local commits. Does not push or open PRs unless a parent workflow does. |
+| `take-pr-to-completion` | Orchestrates commit, push, PR creation, watcher repairs, per-PR landing confirmation, and post-request observation. Only the guarded helper may request a normal protected landing. |
+| `commit-workspace-changes` | Discovers changes, runs checks, and commits. Direct invocation normally hands off to the full lifecycle; explicit local-only/commit-only wording stops after commits. |
 | `gh-review-comment-triage` | Fetches review threads, verifies claims against current code, patches real issues, and replies/resolves with evidence. |
 | `merge-conflict-resolution` | Resolves merge/rebase/cherry-pick/revert conflicts by reconstructing both intents and validating the result. |
 
@@ -53,7 +53,7 @@ claude plugin install pr-completion@pr-completion --scope user
 Pin the marketplace to a release tag, then install:
 
 ```bash
-claude plugin marketplace add anur4ag/pr-completion@v0.2.1
+claude plugin marketplace add anur4ag/pr-completion@v0.3.0
 claude plugin install pr-completion@pr-completion --scope user
 ```
 
@@ -82,8 +82,8 @@ codex plugin add pr-completion@pr-completion
 Pin the marketplace to a release tag:
 
 ```bash
-codex plugin marketplace add anur4ag/pr-completion@v0.2.1
-# or: codex plugin marketplace add anur4ag/pr-completion --ref v0.2.1
+codex plugin marketplace add anur4ag/pr-completion@v0.3.0
+# or: codex plugin marketplace add anur4ag/pr-completion --ref v0.3.0
 codex plugin add pr-completion@pr-completion
 ```
 
@@ -105,24 +105,19 @@ codex plugin marketplace remove pr-completion
 
 ## First use
 
-1. Open a repository with an open pull request (or local task changes ready to commit).
+1. Open a repository with an open pull request or local task changes ready to commit.
 2. Authenticate GitHub CLI: `gh auth status` should succeed for that host.
 3. Ask the agent to drive the PR with `$pr-completion:take-pr-to-completion`.
-4. Expect a terminal report of **merge-ready**, **externally auto-merge-enabled**, **already merged**, or **blocked** with evidence.
-5. Merge yourself (or with your own process). This plugin does not merge.
+4. The agent prepares or creates the PR and autonomously handles normal CI, review, and conflict cycles.
+5. At `ready`, review the per-PR prompt. It names the repository, PR URL, exact head SHA, action/method, and warns that approval may merge immediately.
+6. Approve that PR's landing or stop at readiness. Approval is never reused for another PR or a changed head.
+7. After approval, expect a terminal report of **merged** or **blocked**; without approval, expect **ready** with evidence.
 
 ## Safety boundary
 
-Terminal success is **verified merge readiness**, not a merged PR.
+Routine work stops at verified readiness until you explicitly approve one PR and one current head SHA. The audited `pr_land.py` helper is the only merge-state mutation surface. It rechecks the resolved watcher policy, readiness, head identity, queue requirement, and allowed merge method immediately before using GitHub's normal protected auto-merge or merge-queue path.
 
-The completion workflow must not run:
-
-- `gh pr merge` or GraphQL/REST merge mutations
-- enable/disable auto-merge (`enablePullRequestAutoMerge`, `disablePullRequestAutoMerge`)
-- merge-queue enqueue (`enqueuePullRequest`)
-- force-push or branch-protection bypasses
-
-Auto-merge that another actor already enabled may be observed and reported only.
+The workflow never uses admin bypass, force-push, protection bypass, history rewrite, direct REST/GraphQL merge mutations, or implicit/bulk approval. A changed head invalidates approval. After an approved request, the read-only watcher remains active in `awaiting_merge` only while the exact-head auto-merge request or merge-queue entry remains observable; vanished or rejected enrollment becomes a blocker, and only an exact-head `merged` observation is success.
 
 ## Privacy and license
 

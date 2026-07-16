@@ -97,6 +97,65 @@ class PackageError(Exception):
     """Release packaging failure."""
 
 
+def lexical_member(root: Path, relative: str) -> Path:
+    path = Path(relative)
+    if path.is_absolute() or not path.parts or any(part in {"", ".", ".."} for part in path.parts):
+        raise PackageError(f"unsafe release member path: {relative}")
+    current = root
+    for part in path.parts:
+        current = current / part
+        if current.is_symlink():
+            raise PackageError(f"refusing symlink release member or ancestor: {relative}")
+    try:
+        current.resolve(strict=True).relative_to(root.resolve(strict=True))
+    except (FileNotFoundError, ValueError) as error:
+        raise PackageError(f"release member leaves root or is missing: {relative}") from error
+    if not current.is_file():
+        raise PackageError(f"release member is not a regular file: {relative}")
+    return current
+
+
+def secure_read_member(root: Path, relative: str) -> tuple[bytes, int]:
+    """Read one regular member without following symlinks on POSIX.
+
+    Windows lacks portable openat/O_NOFOLLOW support, so its fallback validates
+    every lexical component immediately before and after the read.
+    """
+    source = lexical_member(root, relative)
+    if os.name != "posix" or not hasattr(os, "O_NOFOLLOW"):
+        data = source.read_bytes()
+        source = lexical_member(root, relative)
+        return data, file_mode(source)
+
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    file_flags = os.O_RDONLY | os.O_NOFOLLOW
+    directory_fds: list[int] = []
+    file_fd: int | None = None
+    try:
+        current_fd = os.open(root, directory_flags)
+        directory_fds.append(current_fd)
+        parts = Path(relative).parts
+        for part in parts[:-1]:
+            current_fd = os.open(part, directory_flags, dir_fd=current_fd)
+            directory_fds.append(current_fd)
+        file_fd = os.open(parts[-1], file_flags, dir_fd=current_fd)
+        metadata = os.fstat(file_fd)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise PackageError(f"release member is not a regular file: {relative}")
+        with os.fdopen(file_fd, "rb", closefd=True) as handle:
+            file_fd = None
+            data = handle.read()
+        mode = 0o755 if metadata.st_mode & 0o111 else 0o644
+        return data, mode
+    except OSError as error:
+        raise PackageError(f"could not safely read release member {relative}: {error}") from error
+    finally:
+        if file_fd is not None:
+            os.close(file_fd)
+        for descriptor in reversed(directory_fds):
+            os.close(descriptor)
+
+
 def plugin_root_from(start: Path) -> Path:
     candidate = start.resolve()
     if candidate.is_file():
@@ -139,7 +198,16 @@ def list_via_git(root: Path) -> list[str] | None:
         return None
     try:
         completed = subprocess.run(
-            ["git", "-C", str(root), "ls-files", "-z"],
+            [
+                "git",
+                "-C",
+                str(root),
+                "ls-files",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+                "-z",
+            ],
             capture_output=True,
             check=False,
         )
@@ -155,9 +223,7 @@ def list_via_git(root: Path) -> list[str] | None:
         relative = item.decode("utf-8", errors="surrogateescape")
         if _should_skip_relative(relative):
             continue
-        path = root / relative
-        if not path.is_file():
-            continue
+        lexical_member(root, relative)
         files.append(relative.replace("\\", "/"))
     return sorted(set(files))
 
@@ -166,6 +232,10 @@ def list_via_walk(root: Path) -> list[str]:
     files: list[str] = []
     for dirpath, dirnames, filenames in os.walk(root):
         path = Path(dirpath)
+        symlink_dirs = [name for name in dirnames if (path / name).is_symlink()]
+        if symlink_dirs:
+            relative = (path / symlink_dirs[0]).relative_to(root).as_posix()
+            raise PackageError(f"refusing symlink release member: {relative}")
         dirnames[:] = sorted(
             name
             for name in dirnames
@@ -174,6 +244,9 @@ def list_via_walk(root: Path) -> list[str]:
         )
         for name in sorted(filenames):
             full = path / name
+            if full.is_symlink():
+                relative = full.relative_to(root).as_posix()
+                raise PackageError(f"refusing symlink release member: {relative}")
             if not full.is_file():
                 continue
             relative = full.relative_to(root).as_posix()
@@ -254,10 +327,7 @@ def write_deterministic_zip(
         compresslevel=9,
     ) as archive:
         for relative in members:
-            source = root / relative
-            if not source.is_file():
-                raise PackageError(f"missing member while packaging: {relative}")
-            data = source.read_bytes()
+            data, mode = secure_read_member(root, relative)
             # Reject accidental cachebuster contamination in JSON manifests.
             if relative.endswith(".json") and CACHEBUSTER_RE.search(
                 data.decode("utf-8", errors="ignore")
@@ -268,7 +338,7 @@ def write_deterministic_zip(
             arcname = f"{archive_root}/{relative}"
             info = zipfile.ZipInfo(filename=arcname, date_time=ZIP_DATE_TIME)
             info.compress_type = zipfile.ZIP_DEFLATED
-            info.external_attr = file_mode(source) << 16
+            info.external_attr = mode << 16
             info.create_system = 3  # Unix
             archive.writestr(info, data, compress_type=zipfile.ZIP_DEFLATED)
 

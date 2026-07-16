@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import random
 import subprocess
@@ -87,6 +88,12 @@ THREAD_QUERY = """
 query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
+      isMergeQueueEnabled
+      mergeQueueEntry {
+        id state position enqueuedAt
+        enqueuer { login }
+        headCommit { oid }
+      }
       reviewThreads(first: 100, after: $endCursor) {
         nodes {
           id isResolved isOutdated path line originalLine
@@ -143,11 +150,17 @@ class Settings:
     discover: str
     max_depth: int
     check_policy: str
+    policy_source: str
+    config_path: Path | None
     strict_changes_requested: bool
     required_reviewers: tuple[str, ...]
     targets: tuple[Target, ...]
     cursor_path: Path | None
     observations_path: Path | None
+    await_merge_head: str | None
+    await_merge_mode: str | None
+    await_merge_since: datetime | None
+    await_merge_grace_seconds: float
     fixture: Path | None
     pretty: bool
     verbose: bool
@@ -291,10 +304,25 @@ def positive_float(value: object, name: str, allow_zero: bool = False) -> float:
         number = float(value)
     except (TypeError, ValueError) as error:
         raise WatchError(f"{name} must be a number") from error
+    if not math.isfinite(number):
+        raise WatchError(f"{name} must be finite")
     if number < 0 or (number == 0 and not allow_zero):
         qualifier = "non-negative" if allow_zero else "positive"
         raise WatchError(f"{name} must be {qualifier}")
     return number
+
+
+def utc_timestamp(value: str, name: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise WatchError(f"{name} must be an ISO-8601 timestamp") from error
+    if parsed.tzinfo is None:
+        raise WatchError(f"{name} must include a timezone")
+    normalized = parsed.astimezone(timezone.utc)
+    if normalized > datetime.now(timezone.utc):
+        raise WatchError(f"{name} cannot be in the future")
+    return normalized
 
 
 def positive_int(value: object, name: str, allow_zero: bool = False) -> int:
@@ -366,6 +394,15 @@ def build_settings(args: argparse.Namespace, cwd: Path) -> Settings:
         config_path = Path(args.config).expanduser().resolve() if args.config else find_config(cwd)
         if config_path is not None:
             config = read_config(config_path)
+    policy_source = (
+        "no-config"
+        if args.no_config
+        else "explicit-config"
+        if args.config
+        else "discovered-config"
+        if config_path is not None
+        else "defaults"
+    )
 
     values = {**DEFAULTS, **config}
     overrides = {
@@ -428,6 +465,34 @@ def build_settings(args: argparse.Namespace, cwd: Path) -> Settings:
     )
 
     fixture = Path(args.fixture).expanduser().resolve() if args.fixture else None
+    await_merge_head = args.await_merge.strip() if args.await_merge else None
+    if args.await_merge is not None and not await_merge_head:
+        raise WatchError("--await-merge must be a non-empty head SHA")
+    if await_merge_head is not None and len(targets) > 1:
+        raise WatchError("--await-merge supports exactly one pull request target")
+    if await_merge_head is not None and not targets and discover != "current":
+        raise WatchError("--await-merge without --target requires --discover current")
+    await_merge_mode = args.await_merge_mode
+    if await_merge_head is not None and await_merge_mode is None:
+        raise WatchError("--await-merge requires --await-merge-mode auto or queue")
+    if await_merge_head is None and await_merge_mode is not None:
+        raise WatchError("--await-merge-mode requires --await-merge HEAD_SHA")
+    await_merge_since = (
+        utc_timestamp(args.await_merge_since, "awaitMergeSince")
+        if args.await_merge_since is not None
+        else None
+    )
+    if await_merge_head is not None and await_merge_since is None:
+        raise WatchError("--await-merge requires --await-merge-since TIMESTAMP")
+    if await_merge_head is None and await_merge_since is not None:
+        raise WatchError("--await-merge-since requires --await-merge HEAD_SHA")
+    await_merge_grace_seconds = positive_float(
+        args.await_merge_grace,
+        "awaitMergeGraceSeconds",
+        allow_zero=True,
+    )
+    if await_merge_grace_seconds > 60:
+        raise WatchError("awaitMergeGraceSeconds must not exceed 60")
     if fixture is not None and args.cursor is None and "cursorPath" not in config:
         # Offline fixtures stay hermetic unless a cursor is explicitly under test.
         cursor_path = None
@@ -441,11 +506,17 @@ def build_settings(args: argparse.Namespace, cwd: Path) -> Settings:
         discover=discover,
         max_depth=positive_int(values["maxDepth"], "maxDepth", allow_zero=True),
         check_policy=check_policy,
+        policy_source=policy_source,
+        config_path=config_path,
         strict_changes_requested=strict_changes_requested,
         required_reviewers=reviewers,
         targets=targets,
         cursor_path=cursor_path,
         observations_path=observations_path,
+        await_merge_head=await_merge_head,
+        await_merge_mode=await_merge_mode,
+        await_merge_since=await_merge_since,
+        await_merge_grace_seconds=await_merge_grace_seconds,
         fixture=fixture,
         pretty=args.pretty,
         verbose=args.verbose,
@@ -533,13 +604,13 @@ def selector_args(selector: str | None) -> list[str]:
     return [] if selector is None else [selector]
 
 
-def review_threads(
+def pull_request_auxiliary_state(
     runner: Runner,
     path: Path,
     repository: str,
     pr_number: int,
     hostname: str,
-) -> list[dict[str, object]]:
+) -> tuple[list[dict[str, object]], dict[str, object] | None, bool | None]:
     owner, name = repository.split("/", 1)
     value = runner.json(
         [
@@ -563,20 +634,38 @@ def review_threads(
     )
     pages = value if isinstance(value, list) else [value]
     threads: list[dict[str, object]] = []
+    merge_queue_entry: dict[str, object] | None = None
+    is_merge_queue_enabled: bool | None = None
     for page in pages:
         if not isinstance(page, dict):
             continue
         try:
-            nodes = page["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]
+            pull_request = page["data"]["repository"]["pullRequest"]
+            nodes = pull_request["reviewThreads"]["nodes"]
         except (KeyError, TypeError):
             continue
+        raw_entry = pull_request.get("mergeQueueEntry")
+        if merge_queue_entry is None and isinstance(raw_entry, dict):
+            merge_queue_entry = raw_entry
+        raw_enabled = pull_request.get("isMergeQueueEnabled")
+        if is_merge_queue_enabled is None and isinstance(raw_enabled, bool):
+            is_merge_queue_enabled = raw_enabled
         if isinstance(nodes, list):
             threads.extend(node for node in nodes if isinstance(node, dict))
-    return threads
+    return threads, merge_queue_entry, is_merge_queue_enabled
 
 
 def collect_target(target: Target, settings: Settings, runner: Runner) -> dict[str, object]:
-    repo_value = runner.json(["gh", "repo", "view", "--json", "nameWithOwner,url"], target.path)
+    repo_value = runner.json(
+        [
+            "gh",
+            "repo",
+            "view",
+            "--json",
+            "nameWithOwner,url,mergeCommitAllowed,rebaseMergeAllowed,squashMergeAllowed",
+        ],
+        target.path,
+    )
     if not isinstance(repo_value, dict) or not isinstance(repo_value.get("nameWithOwner"), str):
         raise WatchError("gh repo view did not return nameWithOwner")
     repository = repo_value["nameWithOwner"]
@@ -595,6 +684,8 @@ def collect_target(target: Target, settings: Settings, runner: Runner) -> dict[s
     if pr_value.get("state") == "MERGED":
         checks: object = []
         threads: list[dict[str, object]] = []
+        merge_queue_entry: dict[str, object] | None = None
+        is_merge_queue_enabled: bool | None = None
     else:
         check_args = [
             "gh",
@@ -612,15 +703,24 @@ def collect_target(target: Target, settings: Settings, runner: Runner) -> dict[s
             allowed_codes=frozenset({0, 1, 8}),
             empty_value=[],
         )
-        threads = review_threads(runner, target.path, repository, pr_value["number"], hostname)
+        threads, merge_queue_entry, is_merge_queue_enabled = pull_request_auxiliary_state(
+            runner, target.path, repository, pr_value["number"], hostname
+        )
 
     return {
         "path": str(target.path),
         "kind": target.kind,
         "repository": repository,
+        "repositoryPolicy": {
+            "mergeCommitAllowed": repo_value.get("mergeCommitAllowed"),
+            "rebaseMergeAllowed": repo_value.get("rebaseMergeAllowed"),
+            "squashMergeAllowed": repo_value.get("squashMergeAllowed"),
+        },
         "pr": pr_value,
         "checks": checks if isinstance(checks, list) else [],
         "reviewThreads": threads,
+        "mergeQueueEntry": merge_queue_entry,
+        "isMergeQueueEnabled": is_merge_queue_enabled,
     }
 
 
@@ -814,6 +914,9 @@ def classify_target(
     raw: dict[str, object],
     required_reviewers: Sequence[str],
     strict_changes_requested: bool,
+    await_merge_head: str | None,
+    await_merge_mode: str | None,
+    allow_missing_landing_evidence: bool,
 ) -> dict[str, object]:
     pr = raw.get("pr")
     if not isinstance(pr, dict):
@@ -858,6 +961,10 @@ def classify_target(
     merge_state = str(pr.get("mergeStateStatus") or "UNKNOWN")
     review_decision = str(pr.get("reviewDecision") or "")
     provenance = auto_merge_provenance(pr)
+    merge_queue_entry_raw = raw.get("mergeQueueEntry")
+    merge_queue_entry = (
+        merge_queue_entry_raw if isinstance(merge_queue_entry_raw, dict) else None
+    )
 
     if mergeable == "CONFLICTING" or merge_state == "DIRTY":
         actions.append({"type": "conflict"})
@@ -950,15 +1057,93 @@ def classify_target(
     pr_state = str(pr.get("state") or "UNKNOWN")
     blocked_reason: str | None = None
     if pr_state == "MERGED" or pr.get("mergedAt"):
-        state = "merged"
-        actions = []
-        pending = []
+        if await_merge_head is not None and head_sha != await_merge_head:
+            state = "blocked"
+            actions = [
+                {
+                    "type": "authorization_stale",
+                    "reason": "merged pull request head differs from landing authorization",
+                    "expectedHead": await_merge_head,
+                    "currentHead": head_sha or None,
+                }
+            ]
+            pending = []
+        else:
+            state = "merged"
+            actions = []
+            pending = []
     elif pr_state != "OPEN":
         state = "blocked"
         blocked_reason = f"pull request is {pr_state.lower()}"
     elif bool(pr.get("isDraft")):
         state = "blocked"
         blocked_reason = "pull request is draft"
+    elif await_merge_head is not None and head_sha != await_merge_head:
+        state = "blocked"
+        actions = [
+            {
+                "type": "authorization_stale",
+                "reason": "pull request head changed after landing authorization",
+                "expectedHead": await_merge_head,
+                "currentHead": head_sha or None,
+            }
+        ]
+        pending = []
+    elif await_merge_head is not None:
+        queue_state = str(merge_queue_entry.get("state") or "") if merge_queue_entry else ""
+        queue_head_raw = (
+            merge_queue_entry.get("headCommit") if merge_queue_entry is not None else None
+        )
+        queue_head = (
+            queue_head_raw.get("oid") if isinstance(queue_head_raw, dict) else None
+        )
+        evidence_present = (
+            provenance is not None
+            if await_merge_mode == "auto"
+            else merge_queue_entry is not None
+        )
+        evidence_invalid = (
+            await_merge_mode == "queue"
+            and (
+                queue_state == "UNMERGEABLE"
+                or (isinstance(queue_head, str) and queue_head and queue_head != head_sha)
+            )
+        )
+        if evidence_invalid:
+            state = "blocked"
+            actions = [
+                {
+                    "type": "landing_enrollment_rejected",
+                    "mode": await_merge_mode,
+                    "queueState": queue_state or None,
+                    "queueHead": queue_head,
+                    "currentHead": head_sha,
+                }
+            ]
+            pending = []
+        elif not evidence_present and not allow_missing_landing_evidence:
+            state = "blocked"
+            actions = [
+                {
+                    "type": "landing_enrollment_missing",
+                    "mode": await_merge_mode,
+                    "reason": "approved landing enrollment is no longer observable",
+                }
+            ]
+            pending = []
+        else:
+            state = "awaiting_merge"
+            actions = []
+            pending = [
+                {
+                    "type": "merge_completion",
+                    "headSha": head_sha,
+                    "mode": await_merge_mode,
+                    "autoMerge": provenance,
+                    "mergeQueueEntry": merge_queue_entry,
+                    "evidencePending": not evidence_present,
+                }
+            ]
     elif provenance is not None:
         # Externally configured auto-merge is terminal and read-only: report provenance,
         # clear dispatch actions, and do not wait on or repair remaining gates.
@@ -998,6 +1183,7 @@ def classify_target(
         "path": raw.get("path"),
         "kind": raw.get("kind", "explicit"),
         "repository": raw.get("repository"),
+        "repositoryPolicy": raw.get("repositoryPolicy"),
         "state": state,
         "pr": {
             "number": pr.get("number"),
@@ -1012,7 +1198,19 @@ def classify_target(
             "reviewDecision": review_decision or None,
             "autoMergeEnabled": provenance is not None,
             "autoMerge": provenance,
+            "mergeQueueEntry": merge_queue_entry,
+            "isMergeQueueEnabled": raw.get("isMergeQueueEnabled"),
         },
+        "landingAuthorization": (
+            {
+                "expectedHead": await_merge_head,
+                "currentHead": head_sha or None,
+                "current": await_merge_head is not None and head_sha == await_merge_head,
+                "mode": await_merge_mode,
+            }
+            if await_merge_head is not None
+            else None
+        ),
         "checks": {
             "total": len(checks),
             "pass": [check.get("name") for check in check_buckets["pass"]],
@@ -1046,6 +1244,8 @@ def aggregate_state(targets: Sequence[dict[str, object]]) -> str:
         return "blocked"
     if "actionable" in states:
         return "actionable"
+    if "awaiting_merge" in states:
+        return "awaiting_merge"
     if "pending" in states:
         return "pending"
     if all(state == "merged" for state in states):
@@ -1055,12 +1255,19 @@ def aggregate_state(targets: Sequence[dict[str, object]]) -> str:
     return "ready"
 
 
-def snapshot(raw_targets: Sequence[dict[str, object]], settings: Settings) -> dict[str, object]:
+def snapshot(
+    raw_targets: Sequence[dict[str, object]],
+    settings: Settings,
+    allow_missing_landing_evidence: bool = False,
+) -> dict[str, object]:
     targets = [
         classify_target(
             target,
             settings.required_reviewers,
             settings.strict_changes_requested,
+            settings.await_merge_head,
+            settings.await_merge_mode,
+            allow_missing_landing_evidence,
         )
         for target in raw_targets
     ]
@@ -1075,13 +1282,26 @@ def snapshot(raw_targets: Sequence[dict[str, object]], settings: Settings) -> di
         "schemaVersion": SCHEMA_VERSION,
         "observedAt": utc_now(),
         "state": state,
+        "policy": {
+            "source": settings.policy_source,
+            "configPath": (
+                str(settings.config_path) if settings.config_path is not None else None
+            ),
+            "checkPolicy": settings.check_policy,
+            "strictChangesRequested": settings.strict_changes_requested,
+            "requiredReviewers": list(settings.required_reviewers),
+        },
         "targets": targets,
         "actions": actions,
         "errors": [],
     }
 
 
-def load_fixture(path: Path, settings: Settings) -> dict[str, object]:
+def load_fixture(
+    path: Path,
+    settings: Settings,
+    allow_missing_landing_evidence: bool = False,
+) -> dict[str, object]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as error:
@@ -1091,15 +1311,20 @@ def load_fixture(path: Path, settings: Settings) -> dict[str, object]:
     if not isinstance(value, dict) or not isinstance(value.get("targets"), list):
         raise WatchError("fixture must contain a targets array")
     raw_targets = [target for target in value["targets"] if isinstance(target, dict)]
-    return snapshot(raw_targets, settings)
+    return snapshot(raw_targets, settings, allow_missing_landing_evidence)
 
 
-def collect_snapshot(settings: Settings, runner: Runner, cwd: Path) -> dict[str, object]:
+def collect_snapshot(
+    settings: Settings,
+    runner: Runner,
+    cwd: Path,
+    allow_missing_landing_evidence: bool = False,
+) -> dict[str, object]:
     if settings.fixture is not None:
-        return load_fixture(settings.fixture, settings)
+        return load_fixture(settings.fixture, settings, allow_missing_landing_evidence)
     targets = discover_targets(settings, runner, cwd)
     raw_targets = [collect_target(target, settings, runner) for target in targets]
-    return snapshot(raw_targets, settings)
+    return snapshot(raw_targets, settings, allow_missing_landing_evidence)
 
 
 def error_snapshot(error: WatchError) -> dict[str, object]:
@@ -1259,7 +1484,21 @@ def watch(settings: Settings, runner: Runner, cwd: Path) -> int:
             emit_observation(timeout_value, settings)
             return EXIT_TIMEOUT
         try:
-            value = collect_snapshot(settings, runner, cwd)
+            elapsed = time.monotonic() - started
+            landing_elapsed = (
+                (datetime.now(timezone.utc) - settings.await_merge_since).total_seconds()
+                if settings.await_merge_since is not None
+                else elapsed
+            )
+            value = collect_snapshot(
+                settings,
+                runner,
+                cwd,
+                allow_missing_landing_evidence=(
+                    settings.await_merge_head is not None
+                    and landing_elapsed < settings.await_merge_grace_seconds
+                ),
+            )
             consecutive_errors = 0
             error_delay = settings.interval_seconds
         except WatchError as error:
@@ -1283,7 +1522,7 @@ def watch(settings: Settings, runner: Runner, cwd: Path) -> int:
         if settings.mode == "until-actionable":
             if state == "actionable" and cursor_matches(value, settings.cursor_path):
                 pass
-            elif state != "pending":
+            elif state not in {"pending", "awaiting_merge"}:
                 emit_observation(value, settings)
                 return exit_code(state)
         else:
@@ -1328,6 +1567,27 @@ def argument_parser() -> argparse.ArgumentParser:
         help="append emitted observations as NDJSON at this path",
     )
     parser.add_argument("--fixture", help="offline raw snapshot fixture")
+    parser.add_argument(
+        "--await-merge",
+        metavar="HEAD_SHA",
+        help="after an approved landing request, wait for this exact PR head to merge",
+    )
+    parser.add_argument(
+        "--await-merge-mode",
+        choices=("auto", "queue"),
+        help="approved landing mechanism whose enrollment must remain observable",
+    )
+    parser.add_argument(
+        "--await-merge-since",
+        metavar="TIMESTAMP",
+        help="landing-request timestamp; keeps the evidence grace bounded across restarts",
+    )
+    parser.add_argument(
+        "--await-merge-grace",
+        type=float,
+        default=60.0,
+        help="seconds to allow GitHub enrollment evidence to appear (default: 60)",
+    )
     parser.add_argument("--print-config", action="store_true", help="print resolved configuration and exit")
     parser.add_argument("--pretty", action="store_true", help="pretty-print JSON")
     parser.add_argument("--verbose", action="store_true", help="write retry diagnostics to stderr")
@@ -1346,12 +1606,24 @@ def resolved_config(settings: Settings) -> dict[str, object]:
         "discover": settings.discover,
         "maxDepth": settings.max_depth,
         "checkPolicy": settings.check_policy,
+        "policySource": settings.policy_source,
+        "configPath": (
+            str(settings.config_path) if settings.config_path is not None else None
+        ),
         "strictChangesRequested": settings.strict_changes_requested,
         "requiredReviewers": list(settings.required_reviewers),
         "cursorPath": str(settings.cursor_path) if settings.cursor_path is not None else None,
         "observationsPath": (
             str(settings.observations_path) if settings.observations_path is not None else None
         ),
+        "awaitMergeHead": settings.await_merge_head,
+        "awaitMergeMode": settings.await_merge_mode,
+        "awaitMergeSince": (
+            settings.await_merge_since.isoformat().replace("+00:00", "Z")
+            if settings.await_merge_since is not None
+            else None
+        ),
+        "awaitMergeGraceSeconds": settings.await_merge_grace_seconds,
         "targets": [
             {
                 "path": str(target.path),

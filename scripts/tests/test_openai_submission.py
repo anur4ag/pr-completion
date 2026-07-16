@@ -300,6 +300,7 @@ class PortalPackageValidationTests(unittest.TestCase):
                     "skills/take-pr-to-completion/SKILL.md",
                     "skills/take-pr-to-completion/agents/openai.yaml",
                     "skills/take-pr-to-completion/scripts/pr_watch.py",
+                    "skills/take-pr-to-completion/scripts/pr_land.py",
                 },
             )
             self.assertLessEqual(
@@ -311,6 +312,7 @@ class PortalPackageValidationTests(unittest.TestCase):
             self.assertEqual(len(runtime["skills"]), 4)
             self.assertEqual(runtime["watcherState"], "ready")
             self.assertEqual(runtime["watcherActions"], [])
+            self.assertEqual(runtime["landingPlanState"], "confirmation_required")
 
     def test_working_tree_build_skips_content_pin_enforcement(self) -> None:
         """Working-tree path does not enforce published content pin."""
@@ -396,7 +398,7 @@ class PortalPackageValidationTests(unittest.TestCase):
             )
             self.assertTrue(portal.is_file())
             layout = submission.inspect_portal_zip_layout(portal)
-            self.assertEqual(layout["members"], 10)
+            self.assertEqual(layout["members"], 11)
 
     def test_portal_zip_over_one_mib_is_rejected_and_removed(self) -> None:
         members = {

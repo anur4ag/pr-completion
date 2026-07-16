@@ -224,7 +224,11 @@ def run_installed_watcher(
     )
     if not watcher.is_file():
         raise SmokeError(f"installed watcher missing: {watcher}")
+    lander = watcher.with_name("pr_land.py")
+    if not lander.is_file():
+        raise SmokeError(f"installed guarded landing helper missing: {lander}")
     assert_not_source(watcher, source_root, "installed watcher")
+    assert_not_source(lander, source_root, "installed guarded landing helper")
 
     fixtures_dir = (
         installed_root / "skills" / "take-pr-to-completion" / "tests" / "fixtures"
@@ -279,6 +283,36 @@ def run_installed_watcher(
                     "exitCode": completed.returncode,
                 }
             )
+        landing = subprocess.run(
+            [
+                python_executable,
+                "-B",
+                str(lander),
+                "--fixture",
+                str(fixtures_dir / "ready-to-merge.json"),
+                "--head",
+                "head-ready",
+                "--mode",
+                "auto",
+                "--method",
+                "squash",
+            ],
+            cwd=str(cwd),
+            text=True,
+            capture_output=True,
+            check=False,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
+        if landing.returncode != 0:
+            raise SmokeError(
+                "installed guarded landing plan failed: "
+                f"{landing.stderr or landing.stdout}"
+            )
+        plan = json.loads(landing.stdout)
+        if plan.get("state") != "confirmation_required" or not plan.get(
+            "requiresConfirmation"
+        ):
+            raise SmokeError(f"installed guarded landing plan is unsafe: {plan}")
     return results
 
 
