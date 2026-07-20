@@ -28,11 +28,13 @@ SKIP_DIR_NAMES = frozenset(
 )
 AUTHORIZED_LANDER = Path("take-pr-to-completion/scripts/pr_land.py")
 AUDITED_WATCHER = Path("take-pr-to-completion/scripts/pr_watch.py")
+AUDITED_FETCHER = Path("gh-review-comment-triage/scripts/fetch_review_threads.py")
 CONTRACT_SKILL = Path("take-pr-to-completion/SKILL.md")
 AUTHORIZED_ARGV = '["gh", "pr", "merge", url, "--match-head-commit", head]'
 AUDITED_RUNTIME_SHA256 = {
     AUTHORIZED_LANDER: "b2f4b23b35689e4dd7e03286f643e9f5c307ac763b507382a9357c9a0fe12f5f",
     AUDITED_WATCHER: "f4d4a2fc1cfa21adafb2c771cf456dd8b15a5f255425e75b66f4dc4c7199b517",
+    AUDITED_FETCHER: "8b9d1f1cabdcce13823bbea448d7bd7ef161f03c5b2246036ff9f3910a397af5",
 }
 
 FORBIDDEN_SURFACES: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -255,6 +257,23 @@ def scan_authorized_lander(path: Path, content: str, findings: list[str]) -> Non
     )
 
 
+def scan_audited_fetcher(path: Path, content: str, findings: list[str]) -> None:
+    requirements = {
+        "canonical PR URL determines base repository": (
+            'run_json(["gh", "pr", "view", "--json", "number,url"])' in content
+            and "parse_pr_url(str(data[\"url\"]))" in content
+        ),
+        "read-only GitHub GraphQL transport": (
+            'command = ["gh", "api", "graphql"' in content
+        ),
+        "explicit subprocess failure handling": "check=True" in content,
+    }
+    for label, passed in requirements.items():
+        if not passed:
+            findings.append(f"{path}: review-thread fetcher invariant failed: {label}")
+    append_matches(path, content, FORBIDDEN_SURFACES, findings)
+
+
 def scan_file(path: Path, root: Path, findings: list[str]) -> None:
     if path.is_symlink():
         findings.append(f"{path}: symlinks are forbidden in the shipped skills tree")
@@ -274,6 +293,10 @@ def scan_file(path: Path, root: Path, findings: list[str]) -> None:
     if relative == AUDITED_WATCHER:
         verify_audited_runtime(path, relative, content, findings)
         append_matches(path, content, FORBIDDEN_SURFACES, findings)
+        return
+    if relative == AUDITED_FETCHER:
+        verify_audited_runtime(path, relative, content, findings)
+        scan_audited_fetcher(path, content, findings)
         return
     if (
         relative is not None

@@ -1,0 +1,4 @@
+interface:
+  display_name: "GitHub PR Review Triage"
+  short_description: "Verify and address PR review threads safely"
+  default_prompt: "Use $pr-completion:gh-review-comment-triage to verify and address unresolved review threads on the current pull request."
