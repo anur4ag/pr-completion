@@ -150,6 +150,7 @@ def write_local_evidence(
             {**command_result, "name": "required Merls validator"}
         ],
         "suite": {
+            "headSha": head,
             "reportPath": report_path.name,
             "reportSha256": report_checksum,
         },
@@ -702,6 +703,18 @@ class MerlsLocalAuthorityTests(unittest.TestCase):
             evidence_path, checksum = write_local_evidence(
                 Path(directory), head="another-head"
             )
+            with self.assertRaisesRegex(pr_land.LandingError, "another commit"):
+                self.validate_evidence(evidence_path, checksum)
+
+    def test_suite_from_wrong_sha_is_blocked(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence_path, _checksum = write_local_evidence(Path(directory))
+            evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+            evidence["suite"]["headSha"] = "another-head"
+            evidence_path.write_text(
+                json.dumps(evidence, sort_keys=True) + "\n", encoding="utf-8"
+            )
+            checksum = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
             with self.assertRaisesRegex(pr_land.LandingError, "another commit"):
                 self.validate_evidence(evidence_path, checksum)
 

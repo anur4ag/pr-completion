@@ -331,6 +331,8 @@ def validate_local_evidence(
     suite = evidence.get("suite")
     if not isinstance(suite, dict):
         raise LandingError("local authority evidence is missing the centralized suite artifact")
+    if suite.get("headSha") != expected_head:
+        raise LandingError("centralized Merls suite was produced for another commit")
     report_path_value = suite.get("reportPath")
     if not isinstance(report_path_value, str) or not report_path_value:
         raise LandingError("centralized Merls suite report path is missing")

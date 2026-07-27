@@ -31,7 +31,7 @@ AUDITED_WATCHER = Path("take-pr-to-completion/scripts/pr_watch.py")
 CONTRACT_SKILL = Path("take-pr-to-completion/SKILL.md")
 AUTHORIZED_ARGV = '["gh", "pr", "merge", url, "--match-head-commit", head]'
 AUDITED_RUNTIME_SHA256 = {
-    AUTHORIZED_LANDER: "39f91205faffb2816d2133812343100a88abe5e04493f1e91b6703f7e11b5de4",
+    AUTHORIZED_LANDER: "a1efb26670bc0321adae6095c260b0384e9ee501c186b759bd23e6dfdd9ac7e2",
     AUDITED_WATCHER: "f4d4a2fc1cfa21adafb2c771cf456dd8b15a5f255425e75b66f4dc4c7199b517",
 }
 
