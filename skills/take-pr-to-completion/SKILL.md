@@ -55,6 +55,11 @@ Launch `until-actionable` in the background. When it exits, always read and pars
 - `review_threads` or actionable `changes_requested`: load `$pr-completion:gh-review-comment-triage`; after edits validate, commit phase-only, push, restart.
 - `review_rerun`: wait for the reviewer/check state; do not invent work.
 
+A `ci_failure` remains blocking unless every failed check is a proven zero-step
+transport failure and the operator explicitly supplies the exact-head evidence
+and approval described under **Exceptional zero-step CI transport waiver**.
+Never infer that exception while dispatching an ordinary failure.
+
 Approvals and comments on an older SHA are not current when policy or the reviewer requires a fresh pass.
 
 ## Landing-decision phase
@@ -75,6 +80,82 @@ python3 <skill-directory>/scripts/pr_land.py --repo <repo> --pr <url> --head <sh
 ```
 
 For a required merge queue, omit `--method` and use `--mode queue`. Never construct an alternative merge command yourself.
+
+### Exceptional zero-step CI transport waiver
+
+The normal ready predicate remains fail-closed. Never infer a waiver from
+`UNSTABLE`, failed checks, missing required checks, operator identity, or local
+test output. Use this path only when the operator explicitly approves an exact
+head and supplies `--zero-step-ci-waiver <evidence.json>`.
+
+The evidence file is strict and must contain only this shape:
+
+```json
+{
+  "schemaVersion": 1,
+  "headSha": "<full exact PR head SHA>",
+  "sourceValidationStatus": "PASS",
+  "ciTransportStatus": "FAIL_ZERO_STEP",
+  "ciSourceExecutionStatus": "NONE",
+  "operatorWaiver": "APPROVED",
+  "landingMode": "ZERO_STEP_CI_EXCEPTION",
+  "waiverReason": "<human-readable reason>",
+  "independentValidation": {
+    "headSha": "<same exact SHA>",
+    "requiredChecks": [
+      {
+        "name": "<required validation>",
+        "required": true,
+        "status": "PASS",
+        "evidenceRef": "<durable evidence reference>"
+      }
+    ]
+  },
+  "operatorApproval": {
+    "headSha": "<same exact SHA>",
+    "status": "APPROVED",
+    "principal": "<approving principal>",
+    "approvedAt": "<timezone-qualified ISO-8601 timestamp>",
+    "approvalRef": "<durable approval reference>"
+  },
+  "ciFailureEvidence": [
+    {
+      "checkName": "<current failed check name>",
+      "runId": 123,
+      "jobId": 456,
+      "runnerId": 0,
+      "executedStepCount": 0,
+      "failureClass": "TRANSPORT_BEFORE_SOURCE_EXECUTION",
+      "evidenceRef": "https://github.com/<owner>/<repo>/actions/runs/123/job/456"
+    }
+  ]
+}
+```
+
+Use `--check-policy all`; the helper must see and exactly match every current
+failed check. It re-fetches every supplied Actions job and run from GitHub at
+plan and confirmation time, requiring the current head SHA, completed failure,
+`runner_id=0`, no runner name, and an empty step list. Any additional action,
+pending/unknown/malformed check, review gate, conflict, non-`UNSTABLE` merge
+state, evidence mismatch, partial execution, source/test failure, or ambiguity
+blocks the exception.
+
+The plan emits `zeroStepCiWaiverEvidenceDigest` plus these durable fields:
+
+```text
+SOURCE_VALIDATION_STATUS=PASS
+CI_TRANSPORT_STATUS=FAIL_ZERO_STEP
+CI_SOURCE_EXECUTION_STATUS=NONE
+OPERATOR_WAIVER=APPROVED
+LANDING_MODE=ZERO_STEP_CI_EXCEPTION
+```
+
+On explicit confirmation, repeat the same readiness-policy flags and evidence
+path, and pass both the original `--policy-digest` and
+`--waiver-evidence-digest`. The helper re-fetches the PR and Actions evidence;
+a changed head or changed evidence invalidates the prior approval. This waiver
+never applies to a test, build, lint, source-validation, partial-execution, or
+unknown-execution failure.
 
 ## Observe landing to completion
 
