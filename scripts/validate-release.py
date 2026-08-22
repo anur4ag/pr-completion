@@ -130,6 +130,7 @@ REQUIRED_FILE_GROUPS: dict[str, tuple[str, ...]] = {
         "skills/merge-conflict-resolution/SKILL.md",
         "skills/take-pr-to-completion/scripts/pr_watch.py",
         "skills/take-pr-to-completion/scripts/pr_land.py",
+        "skills/take-pr-to-completion/schemas/repository-readiness-v1.schema.json",
     ),
     "batch-a-tooling": (
         "scripts/set-version.py",

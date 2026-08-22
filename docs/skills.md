@@ -74,7 +74,7 @@ Enforced invariants:
 
 1. Landing confirmation is separate for each PR and exact head SHA.
 2. A push or changed head invalidates readiness and approval.
-3. `pr_land.py` is the only merge-state mutation surface and always rechecks the resolved readiness policy—including an explicit `--config` or `--no-config` source—plus `ready`, exact head, queue requirement, and merge-method allowance before acting.
+3. `pr_land.py` is the only merge-state mutation surface and always rechecks the resolved readiness policy—including an explicit `--config` or `--no-config` source—plus watcher readiness or a configured repository attestation, exact head, queue requirement, and merge-method allowance before acting.
 4. Auto mode requires a repository-allowed `merge`, `squash`, or `rebase` method; required queue mode accepts no strategy override.
 5. No admin flag, protection bypass, force-push, history rewrite, or direct merge API is authorized.
 6. The watcher remains read-only. `--await-merge`, `--await-merge-mode auto|queue`, and `--await-merge-since requestedAt` exist only on the CLI, support one PR, and cannot persist approval in `.pr-completion.json`.
@@ -104,6 +104,30 @@ CLI flags override `.pr-completion.json` keys.
 | `cursorPath` | `--cursor PATH` | Git-dir/platform state path | Stores the last emitted fingerprint per PR. |
 | `observationsPath` | `--observations-file PATH` | `null` | Appends emitted observations as NDJSON. |
 | `strictChangesRequested` | `--strict-changes-requested` | `false` | Always treats `CHANGES_REQUESTED` as actionable. |
+| `repositoryReadiness` | none | `null` | Explicitly configures one base-protected repository readiness provider. |
+
+### Repository-owned readiness
+
+The watcher-ready path remains the default. An alternate source-qualification path exists only when the repository-root `.pr-completion.json` contains all of these fields:
+
+```json
+{
+  "version": 1,
+  "repositoryReadiness": {
+    "provider": "example-validator",
+    "providerSchema": "example.readiness.v1",
+    "verifier": "scripts/verify-readiness.py",
+    "maxAgeSeconds": 3600,
+    "blockOnExecutedCheckFailure": true
+  }
+}
+```
+
+The config and Python verifier must be tracked, clean, and identical on the current PR base and candidate; a candidate cannot introduce or alter the provider that qualifies it. The helper invokes the verifier with a fixed argv-only interface, `python -B <verifier> --artifact <path>`, and rejects verifier-caused repository changes. No command string, shell mode, or auto-discovery is supported.
+
+The verifier emits the generic `pr_completion.repository_readiness.v1` shape documented by `skills/take-pr-to-completion/schemas/repository-readiness-v1.schema.json`. It binds repository, PR number, candidate head and tree, base, provider/schema, source-validation result, evidence digest, evaluation time, optional review result, and an attestation digest. Its authority fields must explicitly state that it grants neither operator approval nor merge authority.
+
+Invoke `pr_land.py --repository-readiness <artifact>` to produce a plan. The helper independently refreshes GitHub PR state, rejects a changed identity/head/base, unknown merge policy, review blocker, stale artifact, provider failure, or contradictory/ambiguous executed check state. Absent GitHub checks are allowed in this explicitly configured mode. Confirmation repeats the same artifact plus `--repository-readiness-digest <digest-from-plan>`, the normal `--policy-digest`, and `--confirm`; any change fails closed. Repository readiness establishes source qualification only and never bypasses explicit per-PR confirmation.
 
 `--await-merge HEAD_SHA --await-merge-mode auto|queue --await-merge-since TIMESTAMP` is intentionally CLI-only. It cannot be placed in repository config and rejects multi-target use. `TIMESTAMP` is the helper's `requestedAt` value and must survive process restarts. The watcher allows at most 60 seconds from that timestamp for GitHub's accepted enrollment evidence to appear, then blocks if the auto-merge request or merge-queue entry is absent, rejected, or bound to another head.
 

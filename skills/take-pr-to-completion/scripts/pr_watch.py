@@ -14,7 +14,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Sequence
 from urllib.parse import urlparse
 
@@ -76,6 +76,7 @@ DEFAULTS = {
     "targets": [],
     "cursorPath": "auto",
     "observationsPath": None,
+    "repositoryReadiness": None,
 }
 
 CONFIG_KEYS = {"version", *DEFAULTS.keys()}
@@ -164,6 +165,7 @@ class Settings:
     fixture: Path | None
     pretty: bool
     verbose: bool
+    repository_readiness: dict[str, object] | None = None
 
 
 class Runner:
@@ -338,6 +340,71 @@ def positive_int(value: object, name: str, allow_zero: bool = False) -> int:
     return number
 
 
+def normalize_repository_readiness(value: object) -> dict[str, object] | None:
+    """Validate the optional, read-only repository readiness provider config."""
+
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise WatchError("repositoryReadiness must be an object or null")
+    expected = {
+        "provider",
+        "providerSchema",
+        "verifier",
+        "maxAgeSeconds",
+        "blockOnExecutedCheckFailure",
+    }
+    actual = {str(key) for key in value}
+    if actual != expected:
+        raise WatchError("repositoryReadiness fields are invalid")
+    provider = value.get("provider")
+    provider_schema = value.get("providerSchema")
+    if (
+        not isinstance(provider, str)
+        or not provider
+        or len(provider) > 96
+        or provider[0] not in "abcdefghijklmnopqrstuvwxyz0123456789"
+        or any(
+            character not in "abcdefghijklmnopqrstuvwxyz0123456789._-"
+            for character in provider
+        )
+    ):
+        raise WatchError("repositoryReadiness.provider must be a lowercase safe identifier")
+    if (
+        not isinstance(provider_schema, str)
+        or not provider_schema
+        or len(provider_schema) > 128
+        or provider_schema[0] not in "abcdefghijklmnopqrstuvwxyz0123456789"
+        or any(
+            character not in "abcdefghijklmnopqrstuvwxyz0123456789._-"
+            for character in provider_schema
+        )
+    ):
+        raise WatchError("repositoryReadiness.providerSchema must be a lowercase safe identifier")
+    verifier = value.get("verifier")
+    if not isinstance(verifier, str) or not verifier or "\\" in verifier:
+        raise WatchError("repositoryReadiness.verifier must be a repository-relative POSIX path")
+    verifier_path = PurePosixPath(verifier)
+    if (
+        verifier_path.is_absolute()
+        or verifier_path.suffix != ".py"
+        or any(part in {"", ".", ".."} for part in verifier_path.parts)
+    ):
+        raise WatchError("repositoryReadiness.verifier must be a bounded Python path")
+    max_age = positive_int(value.get("maxAgeSeconds"), "repositoryReadiness.maxAgeSeconds")
+    if max_age > 604800:
+        raise WatchError("repositoryReadiness.maxAgeSeconds must not exceed 604800")
+    if value.get("blockOnExecutedCheckFailure") is not True:
+        raise WatchError("repositoryReadiness must block executed GitHub check failures")
+    return {
+        "provider": provider,
+        "providerSchema": provider_schema,
+        "verifier": verifier_path.as_posix(),
+        "maxAgeSeconds": max_age,
+        "blockOnExecutedCheckFailure": True,
+    }
+
+
 def git_directory(start: Path) -> Path | None:
     current = start.resolve()
     for directory in (current, *current.parents):
@@ -456,6 +523,7 @@ def build_settings(args: argparse.Namespace, cwd: Path) -> Settings:
     strict_changes_requested = values["strictChangesRequested"]
     if not isinstance(strict_changes_requested, bool):
         raise WatchError("strictChangesRequested must be a boolean")
+    repository_readiness = normalize_repository_readiness(values["repositoryReadiness"])
 
     cursor_path = configured_path(
         values["cursorPath"], "cursorPath", config_base, True, cwd
@@ -513,6 +581,7 @@ def build_settings(args: argparse.Namespace, cwd: Path) -> Settings:
         targets=targets,
         cursor_path=cursor_path,
         observations_path=observations_path,
+        repository_readiness=repository_readiness,
         await_merge_head=await_merge_head,
         await_merge_mode=await_merge_mode,
         await_merge_since=await_merge_since,
@@ -1290,6 +1359,7 @@ def snapshot(
             "checkPolicy": settings.check_policy,
             "strictChangesRequested": settings.strict_changes_requested,
             "requiredReviewers": list(settings.required_reviewers),
+            "repositoryReadiness": settings.repository_readiness,
         },
         "targets": targets,
         "actions": actions,
@@ -1616,6 +1686,7 @@ def resolved_config(settings: Settings) -> dict[str, object]:
         "observationsPath": (
             str(settings.observations_path) if settings.observations_path is not None else None
         ),
+        "repositoryReadiness": settings.repository_readiness,
         "awaitMergeHead": settings.await_merge_head,
         "awaitMergeMode": settings.await_merge_mode,
         "awaitMergeSince": (

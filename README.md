@@ -117,6 +117,8 @@ codex plugin marketplace remove pr-completion
 
 Routine work stops at verified readiness until you explicitly approve one PR and one current head SHA. The audited `pr_land.py` helper is the only merge-state mutation surface. It rechecks the resolved watcher policy, readiness, head identity, queue requirement, and allowed merge method immediately before using GitHub's normal protected auto-merge or merge-queue path.
 
+The normal watcher-ready path is unchanged. A repository may explicitly configure a base-protected, read-only readiness verifier and supply a fresh `pr_completion.repository_readiness.v1` artifact instead of using GitHub checks as its source-qualification authority. This alternate path is exact-repository/PR/head/tree/base bound, blocks contradictory executed checks, and still produces the same separate confirmation plan; the artifact cannot grant operator approval or merge authority.
+
 The workflow never uses admin bypass, force-push, protection bypass, history rewrite, direct REST/GraphQL merge mutations, or implicit/bulk approval. A changed head invalidates approval. After an approved request, the read-only watcher remains active in `awaiting_merge` only while the exact-head auto-merge request or merge-queue entry remains observable; vanished or rejected enrollment becomes a blocker, and only an exact-head `merged` observation is success.
 
 ## Privacy and license
