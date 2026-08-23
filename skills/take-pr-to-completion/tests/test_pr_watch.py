@@ -1202,6 +1202,34 @@ class GuardedLandingSafetyContractTests(unittest.TestCase):
         self.assertEqual(code, 1, err)
         self.assertIn("explicit confirmation flag", err)
 
+    def test_release_safety_check_requires_isolated_verifier_argv(self):
+        content = LANDER_PATH.read_text(encoding="utf-8").replace(
+            '[sys.executable, "-I", "-B", str(verifier),',
+            '[sys.executable, "-B", str(verifier),',
+            1,
+        )
+        code, err = self._bundle_with("scripts/pr_land.py", content)
+        self.assertEqual(code, 1, err)
+        self.assertIn("argv-only configured verifier", err)
+
+    def test_release_safety_check_rejects_lander_shell_true(self):
+        content = LANDER_PATH.read_text(encoding="utf-8").replace(
+            "            check=False,",
+            "            check=False,\n            shell=True,",
+            1,
+        )
+        code, err = self._bundle_with("scripts/pr_land.py", content)
+        self.assertEqual(code, 1, err)
+        self.assertIn("no shell execution", err)
+
+    def test_release_safety_check_rejects_lander_eval_or_exec(self):
+        for expression in ("eval('1')", "exec('pass')"):
+            with self.subTest(expression=expression):
+                content = LANDER_PATH.read_text(encoding="utf-8") + "\n" + expression + "\n"
+                code, err = self._bundle_with("scripts/pr_land.py", content)
+                self.assertEqual(code, 1, err)
+                self.assertIn("no eval or exec", err)
+
     def test_release_safety_check_rejects_lander_confirmation_control_flow_bypass(self):
         content = LANDER_PATH.read_text(encoding="utf-8").replace(
             "if not args.confirm:", "if False:", 1

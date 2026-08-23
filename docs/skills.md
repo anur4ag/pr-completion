@@ -123,7 +123,9 @@ The watcher-ready path remains the default. An alternate source-qualification pa
 }
 ```
 
-The config and Python verifier must be tracked, clean, and identical on the current PR base and candidate; a candidate cannot introduce or alter the provider that qualifies it. The helper invokes the verifier with a fixed argv-only interface, `python -B <verifier> --artifact <path>`, and rejects verifier-caused repository changes. No command string, shell mode, or auto-discovery is supported.
+The config and Python verifier must be tracked, clean, and identical on the current PR base and candidate; a candidate cannot introduce or alter the provider that qualifies it. The helper invokes the verifier with the fixed argv-only interface `sys.executable -I -B <verifier> --artifact <path>` and rejects verifier-caused repository changes. No command string, shell mode, or auto-discovery is supported.
+
+**REPOSITORY READINESS VERIFIER V1:** The verifier file itself must pre-exist unchanged on the base and runs under Python isolated mode. It must be self-contained with respect to repository-local Python code and must not depend on ambient `PYTHONPATH`, user-site state, current-directory imports, or script-directory imports. Candidate data may be read explicitly as data, but executable trust logic may not be imported implicitly from candidate code. A future provider that genuinely needs multiple trusted repository-local Python files must use a later contract revision with an explicit, declared, base-protected dependency set rather than ambient imports.
 
 The verifier emits the generic `pr_completion.repository_readiness.v1` shape documented by `skills/take-pr-to-completion/schemas/repository-readiness-v1.schema.json`. It binds repository, PR number, candidate head and tree, base, provider/schema, source-validation result, evidence digest, evaluation time, optional review result, and an attestation digest. Its authority fields must explicitly state that it grants neither operator approval nor merge authority.
 

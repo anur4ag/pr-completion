@@ -31,7 +31,7 @@ AUDITED_WATCHER = Path("take-pr-to-completion/scripts/pr_watch.py")
 CONTRACT_SKILL = Path("take-pr-to-completion/SKILL.md")
 AUTHORIZED_ARGV = '["gh", "pr", "merge", url, "--match-head-commit", head]'
 AUDITED_RUNTIME_SHA256 = {
-    AUTHORIZED_LANDER: "b04ed8c1d83c3c1a8c1c718ddc606749a403c77c2018bbb35ba2b4906f69b32e",
+    AUTHORIZED_LANDER: "bec83d3342ac836675329bc4790edc2d8cbbfe3045267e8175cc95265657b85d",
     AUDITED_WATCHER: "aecbf878c79672013b5b9164abf0241f0238c275151bc2364bc57544b367a6b8",
 }
 
@@ -74,6 +74,9 @@ REQUIRED_CONTRACT_MARKERS = (
     "Never use `--admin`",
     "awaiting_merge",
     "phase-only child mode",
+    "REPOSITORY READINESS VERIFIER V1",
+    "Python isolated mode",
+    "script-directory imports",
 )
 
 
@@ -260,7 +263,7 @@ def scan_authorized_lander(path: Path, content: str, findings: list[str]) -> Non
         "fixture mutation refusal": "offline fixtures cannot authorize" in content,
         "no admin bypass": '"--admin"' not in content and "'--admin'" not in content,
         "argv-only configured verifier": (
-            '[sys.executable, "-B", str(verifier), "--artifact", '
+            '[sys.executable, "-I", "-B", str(verifier), "--artifact", '
             'str(artifact_path.resolve())]' in content
         ),
         "no shell execution": not has_shell_true,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -970,6 +971,161 @@ class RepositoryReadinessTests(unittest.TestCase):
                 policy,
                 now=NOW,
             )
+
+    def test_self_contained_verifier_runs_in_isolated_mode(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            verifier = repository / "verify-readiness.py"
+            artifact = repository / "artifact.json"
+            artifact.write_text('{"value":"trusted-data"}\n', encoding="utf-8")
+            verifier.write_text(
+                "import argparse\n"
+                "import json\n"
+                "from pathlib import Path\n"
+                "parser = argparse.ArgumentParser()\n"
+                "parser.add_argument('--artifact', required=True)\n"
+                "args = parser.parse_args()\n"
+                "value = json.loads(Path(args.artifact).read_text(encoding='utf-8'))\n"
+                "print(json.dumps({'value': value['value']}))\n",
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                pr_land.invoke_repository_verifier(repository, verifier, artifact),
+                {"value": "trusted-data"},
+            )
+
+    def test_candidate_sibling_module_cannot_qualify_unchanged_verifier(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            scripts = repository / "scripts"
+            scripts.mkdir()
+            config = repository / ".pr-completion.json"
+            verifier = scripts / "verify-readiness.py"
+            helper = scripts / "readiness_helper.py"
+            sentinel = scripts / "candidate-helper-executed.txt"
+            artifact = repository / "artifact.json"
+            config.write_text("{}\n", encoding="utf-8")
+            verifier.write_text(
+                "from readiness_helper import payload\n"
+                "print(payload())\n",
+                encoding="utf-8",
+            )
+            helper.write_text(
+                "def payload():\n"
+                "    raise RuntimeError('base helper must not be imported')\n",
+                encoding="utf-8",
+            )
+            subprocess.run(
+                ["git", "init", "-b", "main"],
+                cwd=repository,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "PR Completion Test"],
+                cwd=repository,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.email", "test@example.invalid"],
+                cwd=repository,
+                check=True,
+            )
+            subprocess.run(["git", "add", "."], cwd=repository, check=True)
+            subprocess.run(
+                ["git", "commit", "-m", "trusted provider"],
+                cwd=repository,
+                check=True,
+                capture_output=True,
+            )
+            base = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=repository,
+                check=True,
+                text=True,
+                capture_output=True,
+            ).stdout.strip()
+            helper.write_text(
+                "from pathlib import Path\n"
+                "Path(__file__).with_name('candidate-helper-executed.txt').write_text(\n"
+                "    'executed\\n', encoding='utf-8'\n"
+                ")\n"
+                "def payload():\n"
+                "    return '{}'\n",
+                encoding="utf-8",
+            )
+            subprocess.run(["git", "add", str(helper)], cwd=repository, check=True)
+            subprocess.run(
+                ["git", "commit", "-m", "candidate changes helper"],
+                cwd=repository,
+                check=True,
+                capture_output=True,
+            )
+            head = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=repository,
+                check=True,
+                text=True,
+                capture_output=True,
+            ).stdout.strip()
+            artifact.write_text("{}\n", encoding="utf-8")
+            snapshot = repository_snapshot()
+            snapshot["policy"]["configPath"] = str(config)
+            snapshot["targets"][0]["pr"]["headSha"] = head
+            snapshot["targets"][0]["pr"]["baseSha"] = base
+            policy, _digest = pr_land.readiness_policy(snapshot)
+
+            with self.assertRaises(pr_land.LandingError):
+                pr_land.repository_readiness_target(
+                    snapshot,
+                    repository,
+                    artifact,
+                    head,
+                    "auto",
+                    "merge",
+                    policy,
+                    now=NOW,
+                )
+            self.assertFalse(sentinel.exists(), "candidate helper code executed")
+
+    def test_pythonpath_cannot_influence_verifier_imports(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory) / "repository"
+            hostile = Path(directory) / "hostile"
+            repository.mkdir()
+            hostile.mkdir()
+            verifier = repository / "verify-readiness.py"
+            artifact = repository / "artifact.json"
+            sentinel = hostile / "pythonpath-helper-executed.txt"
+            artifact.write_text("{}\n", encoding="utf-8")
+            (hostile / "candidate_pythonpath_helper.py").write_text(
+                "from pathlib import Path\n"
+                "Path(__file__).with_name('pythonpath-helper-executed.txt').write_text(\n"
+                "    'executed\\n', encoding='utf-8'\n"
+                ")\n"
+                "SOURCE = 'hostile'\n",
+                encoding="utf-8",
+            )
+            verifier.write_text(
+                "import json\n"
+                "try:\n"
+                "    import candidate_pythonpath_helper\n"
+                "except ModuleNotFoundError:\n"
+                "    source = 'isolated'\n"
+                "else:\n"
+                "    source = candidate_pythonpath_helper.SOURCE\n"
+                "print(json.dumps({'source': source}))\n",
+                encoding="utf-8",
+            )
+
+            with mock.patch.dict(os.environ, {"PYTHONPATH": str(hostile)}, clear=False):
+                result = pr_land.invoke_repository_verifier(
+                    repository, verifier, artifact
+                )
+
+            self.assertEqual(result, {"source": "isolated"})
+            self.assertFalse(sentinel.exists(), "PYTHONPATH helper code executed")
 
 
 if __name__ == "__main__":

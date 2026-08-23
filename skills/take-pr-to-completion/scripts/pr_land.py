@@ -439,7 +439,7 @@ def invoke_repository_verifier(
     if artifact_path.is_symlink() or not artifact_path.is_file():
         raise LandingError("repository readiness artifact must be a regular file")
     result = run(
-        [sys.executable, "-B", str(verifier), "--artifact", str(artifact_path.resolve())],
+        [sys.executable, "-I", "-B", str(verifier), "--artifact", str(artifact_path.resolve())],
         repository,
     )
     try:

@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Safety
 
-- Repository readiness providers must pre-exist unchanged on the PR base, cannot ignore executed check failures, cannot mutate the local repository during verification, and cannot bypass current GitHub PR/review/merge-policy reconciliation or explicit confirmation.
+- Repository readiness providers must pre-exist unchanged on the PR base and now run under Python isolated mode (`-I -B`), excluding ambient `PYTHONPATH`, user-site, current-directory, and script-directory imports from the v1 trust base. They cannot ignore executed check failures, mutate the local repository during verification, or bypass current GitHub PR/review/merge-policy reconciliation or explicit confirmation.
 
 ### Release metadata
 
