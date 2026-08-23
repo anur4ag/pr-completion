@@ -299,6 +299,7 @@ class PortalPackageValidationTests(unittest.TestCase):
                     "skills/merge-conflict-resolution/SKILL.md",
                     "skills/take-pr-to-completion/SKILL.md",
                     "skills/take-pr-to-completion/agents/openai.yaml",
+                    "skills/take-pr-to-completion/schemas/repository-readiness-v1.schema.json",
                     "skills/take-pr-to-completion/scripts/pr_watch.py",
                     "skills/take-pr-to-completion/scripts/pr_land.py",
                 },
@@ -403,7 +404,7 @@ class PortalPackageValidationTests(unittest.TestCase):
             )
             self.assertTrue(portal.is_file())
             layout = submission.inspect_portal_zip_layout(portal)
-            self.assertEqual(layout["members"], 11)
+            self.assertEqual(layout["members"], 12)
 
     def test_portal_zip_over_one_mib_is_rejected_and_removed(self) -> None:
         members = {

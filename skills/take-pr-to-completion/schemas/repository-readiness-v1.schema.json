@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pr-completion.local/schemas/repository-readiness-v1.schema.json",
+  "title": "PR Completion Repository-Owned Readiness Attestation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "provider",
+    "repository",
+    "pullRequest",
+    "candidateHeadSha",
+    "candidateTreeSha",
+    "baseSha",
+    "readinessResult",
+    "sourceValidationStatus",
+    "evidenceDigest",
+    "evaluatedAt",
+    "reviewResult",
+    "authority",
+    "attestationDigest"
+  ],
+  "properties": {
+    "schema": {"const": "pr_completion.repository_readiness.v1"},
+    "version": {"const": 1},
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "schema"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,95}$"},
+        "schema": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"}
+      }
+    },
+    "repository": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"},
+    "pullRequest": {"type": "integer", "minimum": 1},
+    "candidateHeadSha": {"$ref": "#/$defs/commitSha"},
+    "candidateTreeSha": {"$ref": "#/$defs/commitSha"},
+    "baseSha": {"$ref": "#/$defs/commitSha"},
+    "readinessResult": {"const": "ready"},
+    "sourceValidationStatus": {"const": "PASS"},
+    "evidenceDigest": {"$ref": "#/$defs/digest"},
+    "evaluatedAt": {"type": "string", "format": "date-time"},
+    "reviewResult": {"type": ["string", "null"], "minLength": 1, "maxLength": 128},
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operatorApprovalGranted", "mergeAuthorityGranted"],
+      "properties": {
+        "operatorApprovalGranted": {"const": false},
+        "mergeAuthorityGranted": {"const": false}
+      }
+    },
+    "attestationDigest": {"$ref": "#/$defs/digest"}
+  },
+  "$defs": {
+    "commitSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+  }
+}

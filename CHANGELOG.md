@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added an explicitly configured generic repository-owned readiness contract and read-only verifier path to the sole guarded landing helper. Exact repository, PR, head, tree, base, provider, freshness, and evidence bindings converge on the existing per-PR confirmation flow without granting merge authority.
+
+### Safety
+
+- Repository readiness providers must pre-exist unchanged on the PR base and now run under Python isolated mode (`-I -B`), excluding ambient `PYTHONPATH`, user-site, current-directory, and script-directory imports from the v1 trust base. They cannot ignore executed check failures, mutate the local repository during verification, or bypass current GitHub PR/review/merge-policy reconciliation or explicit confirmation.
+
 ### Release metadata
 
 - Pinned the immutable v0.3.0 tag commit, installable ZIP, portal ZIP, and portable content fingerprint after public release publication.

@@ -59,19 +59,23 @@ Approvals and comments on an older SHA are not current when policy or the review
 
 ## Landing-decision phase
 
-Handle one `ready` PR at a time.
+Handle one `ready` PR at a time. The normal watcher path is unchanged. Only when a repository's base-protected `.pr-completion.json` explicitly configures `repositoryReadiness` and its governed workflow supplies an artifact may `pr_land.py --repository-readiness <artifact>` use the generic repository-owned source-qualification path. Never infer this mode, auto-discover a verifier, or accept arbitrary JSON directly.
+
+**REPOSITORY READINESS VERIFIER V1:** The verifier file itself must pre-exist unchanged on the base and is invoked as `sys.executable -I -B <verifier> --artifact <artifact>` under Python isolated mode. It must be self-contained with respect to repository-local Python code: candidate data may be read explicitly as data, but executable trust logic may not be imported implicitly from candidate code through ambient `PYTHONPATH`, user-site state, current-directory imports, or script-directory imports. A later contract revision may declare and base-protect an explicit multi-file dependency set; v1 does not.
 
 1. Determine whether the repository requires a merge queue. Otherwise infer the allowed merge method from repository settings, instructions, and established history. Ask a method question only when the policy is genuinely ambiguous.
-2. Run `scripts/pr_land.py` **without** `--confirm` for the exact ready head to obtain the canonical plan. Preserve every readiness-policy input from the watcher: pass the same mutually exclusive `--config` or `--no-config` source, repeated `--reviewer`, `--check-policy`, and `--strict-changes-requested` overrides when they were used. Use `--mode queue` for a required queue, or `--mode auto --method merge|squash|rebase` for auto-merge. The plan records the resolved policy source and values, then emits `readinessPolicyDigest`.
+2. Run `scripts/pr_land.py` **without** `--confirm` for the exact ready head to obtain the canonical plan. Preserve every readiness-policy input from the watcher: pass the same mutually exclusive `--config` or `--no-config` source, repeated `--reviewer`, `--check-policy`, and `--strict-changes-requested` overrides when they were used. In configured repository-readiness mode, also pass `--repository-readiness <artifact>`; require its plan to report the exact repository/PR/head/tree/base and a `repositoryReadinessDigest`. Use `--mode queue` for a required queue, or `--mode auto --method merge|squash|rebase` for auto-merge. The plan records the resolved policy source and values, then emits `readinessPolicyDigest`.
 3. Ask for explicit per-PR confirmation using structured input when available. Show repository, PR URL, current head SHA, chosen action/method, and the exact warning from the plan that the request may merge immediately. Offer approve and stop-at-ready choices. Silence, a prior PR's answer, or a previous head's answer is not approval.
 4. If declined, report verified readiness and stop for that PR without mutation.
-5. If approved, immediately invoke the same helper plan with the same readiness-policy flags, `--policy-digest <readinessPolicyDigest>`, and `--confirm`. The helper re-runs the read-only watcher, requires the same resolved policy, requires `ready`, requires the exact authorized head SHA, revalidates queue and merge-method policy, and uses GitHub's normal protected path. If policy, head, or gates changed, return to the watcher; do not reuse approval.
+5. If approved, immediately invoke the same helper plan with the same readiness-policy flags, `--policy-digest <readinessPolicyDigest>`, and `--confirm`. For repository readiness, also repeat `--repository-readiness <artifact> --repository-readiness-digest <repositoryReadinessDigest>`. The helper re-runs the read-only watcher and configured verifier, requires the same resolved policy and source-qualification digest, requires the exact authorized head SHA, revalidates current PR/review/queue/merge-method state, and uses GitHub's normal protected path. If policy, artifact, head, base, or gates changed, return to qualification; do not reuse approval.
 
 Example shapes (fill values from the fresh plan):
 
 ```bash
 python3 <skill-directory>/scripts/pr_land.py --repo <repo> --pr <url> --head <sha> --mode auto --method squash
 python3 <skill-directory>/scripts/pr_land.py --repo <repo> --pr <url> --head <sha> --mode auto --method squash --policy-digest <digest-from-plan> --confirm
+python3 <skill-directory>/scripts/pr_land.py --repo <repo> --pr <url> --head <sha> --mode auto --method squash --repository-readiness <artifact>
+python3 <skill-directory>/scripts/pr_land.py --repo <repo> --pr <url> --head <sha> --mode auto --method squash --repository-readiness <artifact> --repository-readiness-digest <digest-from-plan> --policy-digest <policy-digest-from-plan> --confirm
 ```
 
 For a required merge queue, omit `--method` and use `--mode queue`. Never construct an alternative merge command yourself.

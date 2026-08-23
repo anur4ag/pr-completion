@@ -676,6 +676,56 @@ class ConfigurationTests(unittest.TestCase):
                 str((root / "override-observations.ndjson").resolve()),
             )
 
+    def test_repository_readiness_config_is_explicit_and_does_not_change_watcher_ready(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / ".pr-completion.json"
+            provider = {
+                "provider": "example-validator",
+                "providerSchema": "example.readiness.v1",
+                "verifier": "scripts/verify-readiness.py",
+                "maxAgeSeconds": 3600,
+                "blockOnExecutedCheckFailure": True,
+            }
+            config.write_text(
+                json.dumps({"version": 1, "repositoryReadiness": provider}),
+                encoding="utf-8",
+            )
+            args = pr_watch.argument_parser().parse_args(["--config", str(config)])
+            settings = pr_watch.build_settings(args, root)
+            resolved = pr_watch.resolved_config(settings)
+            snapshot = pr_watch.load_fixture(FIXTURES / "ready-to-merge.json", settings)
+
+            self.assertEqual(settings.repository_readiness, provider)
+            self.assertEqual(resolved["repositoryReadiness"], provider)
+            self.assertEqual(snapshot["policy"]["repositoryReadiness"], provider)
+            self.assertEqual(snapshot["state"], "ready")
+
+    def test_repository_readiness_config_rejects_unsafe_or_ambiguous_values(self):
+        valid = {
+            "provider": "example-validator",
+            "providerSchema": "example.readiness.v1",
+            "verifier": "scripts/verify-readiness.py",
+            "maxAgeSeconds": 3600,
+            "blockOnExecutedCheckFailure": True,
+        }
+        cases = (
+            ({**valid, "provider": "Example Validator"}, "provider"),
+            ({**valid, "provider": "."}, "provider"),
+            ({**valid, "providerSchema": "Example Schema"}, "providerSchema"),
+            ({**valid, "providerSchema": "-"}, "providerSchema"),
+            ({**valid, "verifier": "../verify.py"}, "bounded Python path"),
+            ({**valid, "verifier": "verify.sh"}, "bounded Python path"),
+            ({**valid, "maxAgeSeconds": 604801}, "must not exceed"),
+            ({**valid, "blockOnExecutedCheckFailure": False}, "must block"),
+            ({**valid, "unexpected": True}, "fields are invalid"),
+        )
+        for provider, message in cases:
+            with self.subTest(message=message), self.assertRaisesRegex(
+                pr_watch.WatchError, message
+            ):
+                pr_watch.normalize_repository_readiness(provider)
+
     def test_await_merge_is_cli_only_and_single_target(self):
         parser = pr_watch.argument_parser()
         with tempfile.TemporaryDirectory() as directory:
@@ -1151,6 +1201,34 @@ class GuardedLandingSafetyContractTests(unittest.TestCase):
         code, err = self._bundle_with("scripts/pr_land.py", content)
         self.assertEqual(code, 1, err)
         self.assertIn("explicit confirmation flag", err)
+
+    def test_release_safety_check_requires_isolated_verifier_argv(self):
+        content = LANDER_PATH.read_text(encoding="utf-8").replace(
+            '[sys.executable, "-I", "-B", str(verifier),',
+            '[sys.executable, "-B", str(verifier),',
+            1,
+        )
+        code, err = self._bundle_with("scripts/pr_land.py", content)
+        self.assertEqual(code, 1, err)
+        self.assertIn("argv-only configured verifier", err)
+
+    def test_release_safety_check_rejects_lander_shell_true(self):
+        content = LANDER_PATH.read_text(encoding="utf-8").replace(
+            "            check=False,",
+            "            check=False,\n            shell=True,",
+            1,
+        )
+        code, err = self._bundle_with("scripts/pr_land.py", content)
+        self.assertEqual(code, 1, err)
+        self.assertIn("no shell execution", err)
+
+    def test_release_safety_check_rejects_lander_eval_or_exec(self):
+        for expression in ("eval('1')", "exec('pass')"):
+            with self.subTest(expression=expression):
+                content = LANDER_PATH.read_text(encoding="utf-8") + "\n" + expression + "\n"
+                code, err = self._bundle_with("scripts/pr_land.py", content)
+                self.assertEqual(code, 1, err)
+                self.assertIn("no eval or exec", err)
 
     def test_release_safety_check_rejects_lander_confirmation_control_flow_bypass(self):
         content = LANDER_PATH.read_text(encoding="utf-8").replace(

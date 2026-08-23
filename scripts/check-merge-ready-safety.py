@@ -31,8 +31,8 @@ AUDITED_WATCHER = Path("take-pr-to-completion/scripts/pr_watch.py")
 CONTRACT_SKILL = Path("take-pr-to-completion/SKILL.md")
 AUTHORIZED_ARGV = '["gh", "pr", "merge", url, "--match-head-commit", head]'
 AUDITED_RUNTIME_SHA256 = {
-    AUTHORIZED_LANDER: "b2f4b23b35689e4dd7e03286f643e9f5c307ac763b507382a9357c9a0fe12f5f",
-    AUDITED_WATCHER: "f4d4a2fc1cfa21adafb2c771cf456dd8b15a5f255425e75b66f4dc4c7199b517",
+    AUTHORIZED_LANDER: "bec83d3342ac836675329bc4790edc2d8cbbfe3045267e8175cc95265657b85d",
+    AUDITED_WATCHER: "aecbf878c79672013b5b9164abf0241f0238c275151bc2364bc57544b367a6b8",
 }
 
 FORBIDDEN_SURFACES: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -74,6 +74,9 @@ REQUIRED_CONTRACT_MARKERS = (
     "Never use `--admin`",
     "awaiting_merge",
     "phase-only child mode",
+    "REPOSITORY READINESS VERIFIER V1",
+    "Python isolated mode",
+    "script-directory imports",
 )
 
 
@@ -232,6 +235,24 @@ def verify_audited_runtime(
 
 
 def scan_authorized_lander(path: Path, content: str, findings: list[str]) -> None:
+    try:
+        tree = ast.parse(content)
+    except SyntaxError as error:
+        findings.append(f"{path}: guarded landing helper cannot be safety-audited: {error}")
+        return
+    calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
+    has_shell_true = any(
+        any(
+            keyword.arg == "shell"
+            and isinstance(keyword.value, ast.Constant)
+            and keyword.value.value is True
+            for keyword in call.keywords
+        )
+        for call in calls
+    )
+    has_dynamic_code = any(
+        callable_name(call.func) in {"eval", "exec"} for call in calls
+    )
     requirements = {
         "one canonical guarded GitHub CLI argv": content.count(AUTHORIZED_ARGV) == 1,
         "explicit confirmation flag": '"--confirm"' in content,
@@ -241,6 +262,21 @@ def scan_authorized_lander(path: Path, content: str, findings: list[str]) -> Non
         "head guard flag": '"--match-head-commit"' in content,
         "fixture mutation refusal": "offline fixtures cannot authorize" in content,
         "no admin bypass": '"--admin"' not in content and "'--admin'" not in content,
+        "argv-only configured verifier": (
+            '[sys.executable, "-I", "-B", str(verifier), "--artifact", '
+            'str(artifact_path.resolve())]' in content
+        ),
+        "no shell execution": not has_shell_true,
+        "no eval or exec": not has_dynamic_code,
+        "base-protected readiness provider": (
+            "must pre-exist unchanged on the PR base" in content
+        ),
+        "executed check failures remain blocking": "cannot bypass watcher actions" in content
+        and "contradictory or ambiguous GitHub checks" in content,
+        "repository readiness grants no landing authority": (
+            "cannot grant operator or merge authority" in content
+        ),
+        "fresh final repository reconciliation": "final_snapshot = watcher_snapshot(" in content,
     }
     for label, passed in requirements.items():
         if not passed:
