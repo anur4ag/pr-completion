@@ -119,6 +119,8 @@ Routine work stops at verified readiness until you explicitly approve one PR and
 
 The workflow never uses admin bypass, force-push, protection bypass, history rewrite, direct REST/GraphQL merge mutations, or implicit/bulk approval. A changed head invalidates approval. After an approved request, the read-only watcher remains active in `awaiting_merge` only while the exact-head auto-merge request or merge-queue entry remains observable; vanished or rejected enrollment becomes a blocker, and only an exact-head `merged` observation is success.
 
+An exceptional zero-step CI transport waiver is available only through the same guarded helper and only when explicitly requested. It requires exact-head independent validation evidence, explicit operator approval, a recorded reason, exact coverage of the current failed checks, and live GitHub Actions proof that every supplied job had `runner_id=0` and executed zero steps. It remains unavailable for source, test, build, lint, partial-execution, or unknown-execution failures; absent or changed evidence fails closed. The full evidence contract is documented in [`take-pr-to-completion`](skills/take-pr-to-completion/SKILL.md#exceptional-zero-step-ci-transport-waiver).
+
 ## Privacy and license
 
 - Plugin code and local helpers execute on your machine inside Claude Code or Codex.
