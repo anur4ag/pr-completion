@@ -67,6 +67,38 @@ Handle one `ready` PR at a time.
 4. If declined, report verified readiness and stop for that PR without mutation.
 5. If approved, immediately invoke the same helper plan with the same readiness-policy flags, `--policy-digest <readinessPolicyDigest>`, and `--confirm`. The helper re-runs the read-only watcher, requires the same resolved policy, requires `ready`, requires the exact authorized head SHA, revalidates queue and merge-method policy, and uses GitHub's normal protected path. If policy, head, or gates changed, return to the watcher; do not reuse approval.
 
+### Merls local delivery authority
+
+Do not reinterpret failed hosted checks as passing. A narrowly scoped Merls-only
+authority path is available only when every GitHub Actions job for the exact PR
+head completed as an infrastructure failure with no runnable steps. Supply both
+`--local-authority-evidence <path>` and
+`--local-authority-checksum <sha256>` to the planning call and preserve them
+unchanged for the confirmed call.
+
+The helper then requires all of the following before it will emit a plan:
+
+- a clean local checkout at the exact current PR head;
+- a mergeable PR with no unresolved review, missing reviewer, conflict, stale
+  head, pending check, canceled/timed-out test, or unexplained failure;
+- the active Merls repository policy that names repository-local validation and
+  the centralized Merls Test Center sources;
+- a fresh checksum-bound `merls.local_delivery_evidence.v1` artifact containing
+  passing focused tests, passing required validators, the documented hosted
+  infrastructure reason, and operator authorization or a policy reference;
+- a checksum-validated `merls.test_run_result.v1` report for
+  `unit,functional,integration-safe` with exactly 276 unique passes, zero
+  failures, zero skips, and `live_changed=no`.
+
+The plan and landing-request record state that hosted checks were unavailable,
+not passed; name the reason and local delivery authority; bind the exact head,
+suite counts, report checksum, evidence checksum, policy/authorization, and
+zero-step job observation; and set `genericBypass` to false. Any head move,
+evidence change, policy change, runnable hosted step, or ordinary product-test
+failure invalidates the plan. Requiring this evidence does not remove the normal
+per-PR confirmation requirement and does not change the default hosted-green
+path.
+
 Example shapes (fill values from the fresh plan):
 
 ```bash
