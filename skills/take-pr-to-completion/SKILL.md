@@ -52,7 +52,7 @@ Launch `until-actionable` in the background. When it exits, always read and pars
 - `conflict`: load `$pr-completion:merge-conflict-resolution`, validate, commit phase-only, push, restart.
 - `base_behind`: update only when policy/readiness requires it; prefer a base merge over history rewriting when policy is silent.
 - `ci_failure`: inspect logs, fix branch-caused/deterministic failures, rerun justified flaky jobs, validate, commit phase-only, push, restart.
-- `review_threads` or actionable `changes_requested`: load `$pr-completion:gh-review-comment-triage`; after edits validate, commit phase-only, push, restart.
+- `review_threads` or actionable `changes_requested`: load `$pr-completion:gh-review-comment-triage`; it must return one complete, self-reviewed round covering every open thread. Then validate, commit phase-only, push **once per round**, restart. Never push while triage of the current thread set is incomplete — reviewers re-review every push, and partial rounds multiply review cycles.
 - `review_rerun`: wait for the reviewer/check state; do not invent work.
 
 Approvals and comments on an older SHA are not current when policy or the reviewer requires a fresh pass.

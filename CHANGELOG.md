@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `gh-review-comment-triage` now fixes findings convergently instead of point-wise: triage the full open-thread table before changing anything, sweep the whole defect class rather than only the flagged line, re-derive the surrounding invariants (callers, state transitions, error paths, falsified comments) for every fix, self-review the accumulated round diff with reviewer-grade scrutiny before it leaves the machine, and return one complete round for a single push. Style-level nits with defensible current code prefer a reasoned reply-and-resolve over a code change.
+- `take-pr-to-completion` review dispatch now requires triage to return one complete, self-reviewed round covering every open thread and pushes once per round, since reviewers re-review every push and partial rounds multiply review cycles.
+
 ### Release metadata
 
 - Pinned the immutable v0.3.0 tag commit, installable ZIP, portal ZIP, and portable content fingerprint after public release publication.
