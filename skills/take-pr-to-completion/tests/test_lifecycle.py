@@ -12,13 +12,100 @@ from unittest import mock
 
 from test_pr_watch import pr_watch as w, settings, FIXTURES
 
+BOT_REVIEWERS = ("coderabbitai", "chatgpt-codex-connector")
+
 
 def raw():
     return json.loads((FIXTURES / "ready-to-merge.json").read_text())["targets"][0]
 
 
 def classify(value, configured=None):
-    return w.snapshot([value], configured or settings(reviewers=tuple(w.DEFAULTS["requiredReviewers"])))
+    return w.snapshot([value], configured or settings(reviewers=BOT_REVIEWERS))
+
+
+class RepositoryReviewPolicyTests(unittest.TestCase):
+    def test_neither_either_or_both_bots_follow_only_configured_requirements(self):
+        for participants in ((), BOT_REVIEWERS[:1], BOT_REVIEWERS[1:], BOT_REVIEWERS):
+            with self.subTest(participants=participants):
+                value = raw()
+                value["pr"]["reviewDecision"] = None
+                value["pr"]["reviews"] = [r for r in value["pr"]["reviews"]
+                                           if r["author"]["login"] in participants]
+                for review in value["pr"]["reviews"]:
+                    review["state"] = "COMMENTED"
+                result = classify(value, settings(reviewers=participants))
+                self.assertEqual(result["state"], "ready")
+                reviews = result["targets"][0]["reviews"]
+                self.assertFalse(reviews["approved"])
+                self.assertTrue(reviews["approvalSatisfied"])
+                self.assertEqual(reviews["missingRequiredReviewers"], [])
+                if participants:
+                    value["pr"]["reviews"].pop()
+                    self.assertNotEqual(classify(value, settings(reviewers=participants))["state"], "ready")
+
+    def test_human_approval_gate_does_not_request_unavailable_bots(self):
+        value = raw()
+        value["pr"].update(reviews=[], reviewDecision="REVIEW_REQUIRED", comments=[
+            {"body": "@coderabbitai review"}, {"body": "@codex review"},
+        ])
+        result = classify(value, settings())
+        self.assertEqual(result["state"], "pending")
+        self.assertEqual(result["actions"], [])
+        self.assertTrue(result["targets"][0]["reviews"]["approvalRequired"])
+        value["pr"].update(reviewDecision="APPROVED", reviews=[
+            {"author": {"login": "maintainer"}, "state": "APPROVED", "body": ""},
+        ])
+        self.assertEqual(classify(value, settings())["state"], "ready")
+
+    def test_explicit_approval_requirement_survives_absence_of_github_rule(self):
+        value = raw()
+        value["pr"].update(reviews=[], reviewDecision=None)
+        configured = replace(settings(), require_approval=True)
+        self.assertEqual(classify(value, configured)["state"], "pending")
+        value["pr"]["reviews"] = [{"author": {"login": "maintainer"}, "state": "APPROVED", "body": ""}]
+        self.assertEqual(classify(value, configured)["state"], "ready")
+        value["pr"]["reviewDecision"] = "REVIEW_REQUIRED"
+        self.assertEqual(classify(value, configured)["state"], "pending")
+
+    def test_missing_or_malformed_github_review_policy_cannot_establish_readiness(self):
+        for decision in (False, 0, [], {}, "UNKNOWN"):
+            value = raw()
+            value["pr"]["reviewDecision"] = decision
+            result = classify(value, settings())
+            self.assertEqual(result["state"], "pending")
+            self.assertIn("review_policy", [p["type"] for p in result["targets"][0]["pending"]])
+        value["pr"].pop("reviewDecision")
+        self.assertEqual(classify(value, settings())["state"], "pending")
+
+    def test_optional_bot_activity_and_findings_still_need_handling(self):
+        value = raw()
+        value["pr"].update(reviews=[], reviewDecision=None, reactions=[
+            {"content": "EYES", "createdAt": "2026-09-15T00:01:00Z",
+             "user": {"login": "chatgpt-codex-connector[bot]"}},
+        ])
+        self.assertEqual(classify(value, settings())["state"], "pending")
+        value["pr"]["reviews"] = [{"id": "review", "author": {"login": BOT_REVIEWERS[1]},
+                                  "state": "COMMENTED", "submittedAt": "2026-09-15T00:02:00Z",
+                                  "body": "Material finding"}]
+        self.assertEqual(classify(value, settings())["state"], "actionable")
+
+    def test_native_defaults_and_explicit_approval_configuration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            parse = w.argument_parser().parse_args
+            defaults = w.build_settings(parse(["--no-config"]), root)
+            self.assertEqual(defaults.required_reviewers, ())
+            self.assertFalse(defaults.require_approval)
+            config = root / ".pr-completion.json"
+            for required in (True, False):
+                config.write_text(json.dumps({"version": 1, "requireApproval": required}))
+                configured = w.build_settings(parse([]), root)
+                self.assertEqual(configured.require_approval, required)
+                self.assertEqual(w.resolved_config(configured)["requireApproval"], required)
+                self.assertTrue(w.build_settings(parse(["--require-approval"]), root).require_approval)
+            config.write_text(json.dumps({"version": 1, "requireApproval": "false"}))
+            with self.assertRaisesRegex(w.WatchError, "requireApproval must be a boolean"):
+                w.build_settings(parse([]), root)
 
 
 class ReviewLifecycleTests(unittest.TestCase):
@@ -43,13 +130,13 @@ class ReviewLifecycleTests(unittest.TestCase):
         value["checks"][0].update(bucket="fail", state="FAILURE")
         self.assertEqual(classify(value)["state"], "actionable")
 
-    def test_default_review_policy_cannot_skip_both_bots(self):
+    def test_explicit_review_policy_cannot_skip_both_bots(self):
         value = raw()
         value["pr"]["reviews"] = []
         value["pr"]["reviewDecision"] = ""
         result = classify(value)
         self.assertNotEqual(result["state"], "ready")
-        self.assertEqual(result["targets"][0]["reviews"]["missingRequiredReviewers"], w.DEFAULTS["requiredReviewers"])
+        self.assertEqual(result["targets"][0]["reviews"]["missingRequiredReviewers"], list(BOT_REVIEWERS))
 
     def test_comment_does_not_erase_approval_or_force_another_pass_on_new_head(self):
         value = raw()

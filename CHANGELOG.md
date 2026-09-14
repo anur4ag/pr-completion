@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Auto-merge enrollment no longer hides CI failures or review work.
 - Restarts replay unfinished actions; independent ready PRs are not hidden by pending dependencies or failed sibling observations.
 - Preserve valid approvals across comment-only reviews and expose edited top-level feedback.
+- Adapt to each repository's review policy: no mandatory bots or extra approval gate by default; explicit participants, approvals, active reviews and GitHub protections remain enforced.
 - Bound command/retry time, retain the latest state on timeout, and diagnose stalled waits without automatically triggering another review.
 - Historical release reconstruction reads matching historical submission materials. Source 0.4.0 is unpublished; published 0.3.0 integrity pins remain separate.
 
@@ -27,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `pr_land.py` lands under task authorization by default. Use `--dry-run` for a non-mutating plan; remove `--confirm` and `--policy-digest` from callers.
 - `requiredReviewers` means completed review participation; GitHub's effective approval and protection rules still gate landing.
+- `requiredReviewers` now defaults to `[]`. Configure required participants and `requireApproval: true` where repository/task policy adds them beyond GitHub's native rules.
 
 ## [0.3.0] - 2026-07-17
 

@@ -73,7 +73,8 @@ DEFAULTS = {
     "maxDepth": 4,
     "checkPolicy": "all",
     "strictChangesRequested": False,
-    "requiredReviewers": ["coderabbitai", "chatgpt-codex-connector"],
+    "requiredReviewers": [],
+    "requireApproval": False,
     "targets": [],
     "cursorPath": "auto",
     "observationsPath": None,
@@ -186,6 +187,7 @@ class Settings:
     pretty: bool
     verbose: bool
     output_path: Path | None = None
+    require_approval: bool = False
 
 
 class Runner:
@@ -448,6 +450,7 @@ def build_settings(args: argparse.Namespace, cwd: Path) -> Settings:
         "maxDepth": args.max_depth,
         "checkPolicy": args.check_policy,
         "strictChangesRequested": args.strict_changes_requested,
+        "requireApproval": args.require_approval,
         "cursorPath": args.cursor,
         "observationsPath": args.observations_file,
     }
@@ -462,6 +465,8 @@ def build_settings(args: argparse.Namespace, cwd: Path) -> Settings:
         raise WatchError("discover must be current, changed, ahead, or open-pr")
     if check_policy not in {"all", "required"}:
         raise WatchError("checkPolicy must be all or required")
+    if not isinstance(values["requireApproval"], bool):
+        raise WatchError("requireApproval must be a boolean")
 
     interval = positive_float(values["intervalSeconds"], "intervalSeconds")
     max_interval = positive_float(values["maxIntervalSeconds"], "maxIntervalSeconds")
@@ -542,6 +547,7 @@ def build_settings(args: argparse.Namespace, cwd: Path) -> Settings:
         config_path=config_path,
         strict_changes_requested=strict_changes_requested,
         required_reviewers=reviewers,
+        require_approval=values["requireApproval"],
         targets=targets,
         cursor_path=cursor_path,
         observations_path=observations_path,
@@ -1074,6 +1080,10 @@ def classify_target(
     approved = review_decision == "APPROVED" or (
         not review_decision and any(r.get("state") == "APPROVED" for r in votes.values())
     )
+    approval_required = bool(raw.get("requireApproval")) or review_decision in {
+        "APPROVED", "REVIEW_REQUIRED", "CHANGES_REQUESTED",
+    }
+    approval_satisfied = approved or not approval_required
     failed_checks = check_buckets["fail"] + check_buckets["cancel"]
     pending_checks = check_buckets["pending"]
     review_running = any("coderabbit" in str(c.get("name", "")).lower()
@@ -1083,7 +1093,9 @@ def classify_target(
         and (c.get("status") in {"QUEUED", "IN_PROGRESS"} or c.get("state") == "PENDING")
         for c in pr.get("statusCheckRollup", [])
     )
-    for reviewer in required_reviewers:
+    active_bots = {normalize_login(r["user"].get("login", "")) for r in reactions
+                   if isinstance(r.get("user"), dict)} & {"coderabbitai", "chatgpt-codex-connector"}
+    for reviewer in set(required_reviewers) | active_bots:
         activity = [r for r in reactions if isinstance(r.get("user"), dict)
                     and normalize_login(r["user"].get("login", "")) == normalize_login(reviewer)]
         last_eye = max((str(r.get("createdAt", "")) for r in activity if r.get("content") == "EYES"), default="")
@@ -1110,6 +1122,11 @@ def classify_target(
         review_running = review_running or not (current_review or current_check)
     actions: list[dict[str, object]] = []
     pending: list[dict[str, object]] = []
+    if ("reviewDecision" not in pr or not isinstance(pr["reviewDecision"], (str, type(None)))
+        or review_decision not in {
+        "", "APPROVED", "REVIEW_REQUIRED", "CHANGES_REQUESTED",
+    }):
+        pending.append({"type": "review_policy", "reason": "GitHub approval policy is unknown"})
     if review_running:
         pending.append({"type": "review_running", "nextAction": "wait for the automatic incremental review"})
     provenance = auto_merge_provenance(pr)
@@ -1141,20 +1158,25 @@ def classify_target(
         actions.append({"type": "review_feedback", "items": feedback})
     if review_decision == "CHANGES_REQUESTED" and (strict_changes_requested or unresolved):
         actions.append({"type": "changes_requested"})
-    if not approved:
+    if not approval_satisfied:
         requests = [c for c in pr.get("comments", [])
                     if str(c.get("body", "")).strip().startswith("@coderabbitai approve")]
         last_request = max((str(c.get("createdAt", "")) for c in requests), default="")
         last_review = max((str(r.get("submittedAt", "")) for r in pr.get("reviews", [])
                            if isinstance(r.get("author"), dict)
                            and normalize_login(r["author"].get("login", "")) == "coderabbitai"), default="")
-        if not (unresolved or feedback or missing_reviewers or review_running or failed_checks or pending_checks):
+        coderabbit_available = "coderabbitai" in {
+            normalize_login(r) for r in required_reviewers
+        } or "coderabbitai" in completed
+        if coderabbit_available and not (
+            unresolved or feedback or missing_reviewers or review_running or failed_checks or pending_checks
+        ):
             if not last_request or last_request < last_review:
                 actions.append({"type": "approval_needed", "suggestedCommand": "@coderabbitai approve",
                                 "reason": "reviews triaged; obtain an effective approval without another review pass"})
         pending.append({"type": "review_required", "reviewRunning": review_running,
                         "approvalRequestedAt": last_request or None,
-                        "nextAction": "observe automatic review/approval; inspect eligible approvers if it cannot satisfy policy"})
+                        "nextAction": "obtain the approval required by this repository; use only its configured reviewers"})
 
     if not head_sha:
         pending.append(
@@ -1323,6 +1345,8 @@ def classify_target(
             "missingRequiredReviewers": missing_reviewers,
             "completedReviewers": sorted(completed),
             "approved": approved,
+            "approvalRequired": approval_required,
+            "approvalSatisfied": approval_satisfied,
             "feedback": feedback,
         },
         "actions": actions,
@@ -1346,7 +1370,8 @@ def snapshot(
     handled = read_feedback(settings)
     targets = [
         classify_target(
-            {**target, "handledFeedback": handled, "checkPolicy": settings.check_policy},
+            {**target, "handledFeedback": handled, "checkPolicy": settings.check_policy,
+             "requireApproval": settings.require_approval},
             settings.required_reviewers,
             settings.strict_changes_requested,
             settings.await_merge_head,
@@ -1374,6 +1399,7 @@ def snapshot(
             "checkPolicy": settings.check_policy,
             "strictChangesRequested": settings.strict_changes_requested,
             "requiredReviewers": list(settings.required_reviewers),
+            "requireApproval": settings.require_approval,
         },
         "targets": targets,
         "actions": actions,
@@ -1684,6 +1710,8 @@ def argument_parser() -> argparse.ArgumentParser:
         help="always treat CHANGES_REQUESTED as actionable",
     )
     parser.add_argument("--reviewer", action="append", help="required review participant (completion, not an approval vote); repeatable")
+    parser.add_argument("--require-approval", action="store_true", default=None,
+                        help="require an approving review even when GitHub has no approval rule")
     parser.add_argument("--cursor", help="durable observation cursor path")
     parser.add_argument(
         "--observations-file",
@@ -1746,6 +1774,7 @@ def resolved_config(settings: Settings) -> dict[str, object]:
         ),
         "strictChangesRequested": settings.strict_changes_requested,
         "requiredReviewers": list(settings.required_reviewers),
+        "requireApproval": settings.require_approval,
         "cursorPath": str(settings.cursor_path) if settings.cursor_path is not None else None,
         "observationsPath": (
             str(settings.observations_path) if settings.observations_path is not None else None

@@ -22,9 +22,17 @@ Each PR retains its own state. Read ready targets even when other targets fail. 
 
 ## Reviews and approval
 
-The default participants are `coderabbitai` and `chatgpt-codex-connector`. `requiredReviewers` / `--reviewer` specify required review participation, not a requirement for each participant to vote APPROVED on every SHA. Completed reviews, Codex positive reactions and active bot checks are distinct signals. GitHub's effective approval gate must also be satisfied.
+Resolve each repository's instructions, configuration and GitHub protection policy first. There are no mandatory bot participants by default, and approval is required only when GitHub or explicit task/repository policy requires it. Support either bot, both, human reviewers, or none. Bot mentions posted by the agent are not evidence of availability. Group targets only when they share the same policy overrides.
 
-Observe CodeRabbit's automatic incremental review after each push. Do not routinely issue `@coderabbitai review`, a full review, or a Codex request because the head changed. Investigate missing coverage or stalled activity before a justified recovery request. Existing approvals can remain effective under repository policy.
+`requiredReviewers` / `--reviewer` specify required review participation, not a requirement for each participant to vote APPROVED on every SHA. `requireApproval` / `--require-approval` adds an approval gate even without a GitHub rule. Completed reviews, Codex positive reactions and active bot checks are distinct signals. Observe active optional reviews and triage their findings too; never drop an explicitly required reviewer just because it is unavailable.
+
+For repositories whose policy requires both bots and an approval, opt in with `.pr-completion.json`:
+
+```json
+{"version": 1, "requiredReviewers": ["coderabbitai", "chatgpt-codex-connector"], "requireApproval": true}
+```
+
+Where configured, observe CodeRabbit's automatic incremental review after each push. Do not routinely issue `@coderabbitai review`, a full review, or a Codex request because the head changed. Investigate missing required coverage or stalled activity before a justified recovery request. Existing approvals can remain effective under repository policy.
 
 Review bodies and top-level comments may contain material findings. The watcher emits unacknowledged bodies as `review_feedback`. The agent verifies their substance, then records the exact returned token using the same target/cursor:
 
@@ -34,7 +42,7 @@ python3 <skill-directory>/scripts/pr_watch.py --target <repo>=<pr-url> --cursor 
 
 Use `non-actionable` with a concrete explanation for clean summaries, stale findings or false positives. Acknowledgements live beside the cursor in `cursor.feedback.json`; keep both across restarts and pass the same cursor to the lander. They survive head changes but do not cover new/edited bodies. Never acknowledge a material issue before it is addressed.
 
-When `approval_needed` is emitted, all material feedback must already be handled and automatic review settled. Post `@coderabbitai approve` if its approval is still needed, then verify the result. That command can also resolve CodeRabbit threads; it must not replace triage. The watcher observes an outstanding request instead of immediately suggesting another. If bot approval is disabled or cannot satisfy an eligible human/CODEOWNER rule, obtain that required review. Do not dismiss a blocking review to manufacture readiness.
+When `approval_needed` is emitted, all material feedback must already be handled and automatic review settled. Post `@coderabbitai approve` only if this repository uses CodeRabbit and permits it to satisfy the outstanding approval gate, then verify the result. That command can also resolve CodeRabbit threads; it must not replace triage. The watcher observes an outstanding request instead of immediately suggesting another. If bot approval is disabled or cannot satisfy an eligible human/CODEOWNER rule, obtain that required review. Do not dismiss a blocking review to manufacture readiness.
 
 [CodeRabbit commands](https://docs.coderabbit.ai/reference/review-commands) and [automatic review](https://docs.coderabbit.ai/configuration/auto-review) describe the provider behavior; repository configuration determines which automatic triggers and approvals are available.
 
@@ -72,7 +80,8 @@ CLI values override `.pr-completion.json`. Run `--print-config` to inspect resol
 
 | Key | CLI | Default |
 | --- | --- | --- |
-| `requiredReviewers` | repeated `--reviewer` | CodeRabbit and Codex review participants |
+| `requiredReviewers` | repeated `--reviewer` | `[]`; no extra required participants |
+| `requireApproval` | `--require-approval` | `false`; GitHub's native approval rules still apply |
 | `checkPolicy` | `--check-policy all\|required` | `all`; use `required` when repository policy permits |
 | `intervalSeconds` | `--interval` | 30 seconds; unchanged observations back off |
 | `maxIntervalSeconds` | `--max-interval` | 120 seconds |
@@ -88,4 +97,4 @@ With `checkPolicy: required`, GitHub CLI selects required checks; a valid empty 
 
 Version 0.4.0 removes `--confirm` and `--policy-digest`; callers invoke the helper directly or use `--dry-run`. The `auto_merge` terminal state is replaced by ongoing `awaiting_merge` observation with repairs preserved. Existing cursor files remain readable, but no longer suppress unfinished actions. Do not use old approval-only semantics for `requiredReviewers`. Upgrade both harness installations to the same release; never overwrite a published version's content in place.
 
-A newly pushed head waits for its automatic CodeRabbit review or completed status to appear, closing the registration gap without posting a manual review request. Retained approvals remain usable when GitHub permits them. The cursor preserves the age of unchanged waits across restarts.
+When CodeRabbit participation is required, a newly pushed head waits for its automatic review or completed status to appear, closing the registration gap without posting a manual review request. Retained approvals remain usable when GitHub permits them. Missing or malformed GitHub review policy cannot establish readiness. The cursor preserves the age of unchanged waits across restarts.
