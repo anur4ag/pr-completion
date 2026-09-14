@@ -117,7 +117,7 @@ jobs:
             echo ""
             echo "- Version: \`${VERSION}\`"
             echo "- Tag: \`${TAG}\`"
-            echo "- Safety: protected landing only after explicit per-PR exact-head confirmation; no admin bypass, force-push, history rewrite, or protection bypass"
+            echo "- Safety: autonomous protected landing with fresh readiness and a head race guard; no admin bypass, force-push, history rewrite, or protection bypass"
             echo ""
             echo "### Install"
             echo ""

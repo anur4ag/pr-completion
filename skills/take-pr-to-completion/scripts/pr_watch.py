@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -56,7 +57,7 @@ BUCKET_ALLOWED_STATES: dict[str, frozenset[str]] = {
     "cancel": frozenset({"CANCELLED", "CANCELED"}),
 }
 # GitHub mergeStateStatus values that may yield ready. All others fail closed.
-READY_SAFE_MERGE_STATES = frozenset({"CLEAN"})
+READY_SAFE_MERGE_STATES = frozenset({"CLEAN", "HAS_HOOKS"})
 READY_SAFE_MERGEABLE = frozenset({"MERGEABLE"})
 # Merge states already mapped to conflict/base-behind actions or explicit pending.
 HANDLED_UNSAFE_MERGE_STATES = frozenset({"DIRTY", "BEHIND", "UNKNOWN", "BLOCKED", "DRAFT"})
@@ -65,14 +66,14 @@ DEFAULTS = {
     "mode": "until-actionable",
     "intervalSeconds": 30.0,
     "maxIntervalSeconds": 120.0,
-    "timeoutSeconds": 0.0,
+    "timeoutSeconds": 3600.0,
     "jitter": 0.1,
     "maxErrors": 5,
     "discover": "current",
     "maxDepth": 4,
     "checkPolicy": "all",
     "strictChangesRequested": False,
-    "requiredReviewers": [],
+    "requiredReviewers": ["coderabbitai", "chatgpt-codex-connector"],
     "targets": [],
     "cursorPath": "auto",
     "observationsPath": None,
@@ -81,26 +82,46 @@ DEFAULTS = {
 CONFIG_KEYS = {"version", *DEFAULTS.keys()}
 PR_FIELDS = (
     "number,url,state,isDraft,headRefName,headRefOid,baseRefName,baseRefOid,"
-    "mergeable,mergeStateStatus,reviewDecision,autoMergeRequest,mergedAt,reviews"
+    "mergeable,mergeStateStatus,reviewDecision,autoMergeRequest,mergedAt,mergeCommit,statusCheckRollup"
 )
 CHECK_FIELDS = "name,state,bucket,link,workflow,startedAt,completedAt"
 THREAD_QUERY = """
-query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
+query($owner: String!, $name: String!, $number: Int!,
+      $threadCursor: String, $reviewCursor: String, $commentCursor: String, $reactionCursor: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
+      headRefOid
       isMergeQueueEnabled
       mergeQueueEntry {
         id state position enqueuedAt
         enqueuer { login }
         headCommit { oid }
       }
-      reviewThreads(first: 100, after: $endCursor) {
+      reviewThreads(first: 100, after: $threadCursor) {
         nodes {
           id isResolved isOutdated path line originalLine
+          originalComment: comments(first: 1) {
+            nodes { id author { login } createdAt url body }
+          }
           comments(last: 1) {
-            nodes { id author { login } createdAt url }
+            nodes { id author { login } createdAt url body }
           }
         }
+        pageInfo { hasNextPage endCursor }
+      }
+      reviews(first: 100, after: $reviewCursor) {
+        nodes { id author { login } state body submittedAt url commit { oid } }
+        pageInfo { hasNextPage endCursor }
+      }
+      comments(first: 100, after: $commentCursor) {
+        nodes {
+          id author { login } body createdAt url
+          reactions(last: 100) { nodes { content createdAt user { login } } }
+        }
+        pageInfo { hasNextPage endCursor }
+      }
+      reactions(first: 100, after: $reactionCursor) {
+        nodes { id content createdAt user { login } }
         pageInfo { hasNextPage endCursor }
       }
     }
@@ -164,9 +185,16 @@ class Settings:
     fixture: Path | None
     pretty: bool
     verbose: bool
+    output_path: Path | None = None
 
 
 class Runner:
+    def __init__(self) -> None:
+        self.repositories: dict[Path, object] = {}
+        self.target_errors: dict[Target, int] = {}
+        self.target_failures: dict[Target, dict[str, object]] = {}
+        self.deadline: float | None = None
+
     def run(
         self,
         args: Sequence[str],
@@ -180,7 +208,11 @@ class Runner:
                 text=True,
                 capture_output=True,
                 check=False,
+                timeout=min(60.0, max(0.01, self.deadline - time.monotonic()))
+                if self.deadline is not None else 60.0,
             )
+        except subprocess.TimeoutExpired as error:
+            raise WatchError(f"{' '.join(args[:3])} timed out", retryable=True) from error
         except FileNotFoundError as error:
             raise WatchError(f"required command not found: {args[0]}") from error
 
@@ -196,13 +228,13 @@ class Runner:
         args: Sequence[str],
         cwd: Path,
         allowed_codes: frozenset[int] = frozenset({0}),
-        empty_value: object | None = None,
     ) -> object:
         result = self.run(args, cwd, allowed_codes)
         output = result.stdout.strip()
+        if not output and result.returncode != 0 and result.stderr.strip():
+            detail = result.stderr.strip()
+            raise WatchError(detail, retryable=is_retryable_error(detail))
         if not output:
-            if empty_value is not None:
-                return empty_value
             raise WatchError(f"{' '.join(args[:3])} returned no JSON")
         try:
             return json.loads(output)
@@ -520,6 +552,7 @@ def build_settings(args: argparse.Namespace, cwd: Path) -> Settings:
         fixture=fixture,
         pretty=args.pretty,
         verbose=args.verbose,
+        output_path=Path(args.output).expanduser().resolve() if args.output else None,
     )
 
 
@@ -605,69 +638,73 @@ def selector_args(selector: str | None) -> list[str]:
 
 
 def pull_request_auxiliary_state(
-    runner: Runner,
-    path: Path,
-    repository: str,
-    pr_number: int,
-    hostname: str,
-) -> tuple[list[dict[str, object]], dict[str, object] | None, bool | None]:
+    runner: Runner, path: Path, repository: str, pr_number: int, hostname: str,
+) -> dict[str, object]:
     owner, name = repository.split("/", 1)
-    value = runner.json(
-        [
-            "gh",
-            "api",
-            "graphql",
-            "--hostname",
-            hostname,
-            "--paginate",
-            "--slurp",
-            "-F",
-            f"owner={owner}",
-            "-F",
-            f"name={name}",
-            "-F",
-            f"number={pr_number}",
-            "-f",
-            f"query={THREAD_QUERY}",
-        ],
-        path,
-    )
-    pages = value if isinstance(value, list) else [value]
-    threads: list[dict[str, object]] = []
-    merge_queue_entry: dict[str, object] | None = None
-    is_merge_queue_enabled: bool | None = None
-    for page in pages:
-        if not isinstance(page, dict):
-            continue
+    connections = {"reviewThreads": "threadCursor", "reviews": "reviewCursor",
+                   "comments": "commentCursor", "reactions": "reactionCursor"}
+    cursors: dict[str, str] = {}
+    collected: dict[str, dict[str, object]] = {key: {} for key in connections}
+    result: dict[str, object] = {}
+    head: str | None = None
+    while True:
+        command = ["gh", "api", "graphql", "--hostname", hostname,
+                   "-F", f"owner={owner}", "-F", f"name={name}",
+                   "-F", f"number={pr_number}", "-f", f"query={THREAD_QUERY}"]
+        for key, cursor in cursors.items():
+            command.extend(["-f", f"{key}={cursor}"])
+        page = runner.json(command, path)
         try:
-            pull_request = page["data"]["repository"]["pullRequest"]
-            nodes = pull_request["reviewThreads"]["nodes"]
-        except (KeyError, TypeError):
-            continue
-        raw_entry = pull_request.get("mergeQueueEntry")
-        if merge_queue_entry is None and isinstance(raw_entry, dict):
-            merge_queue_entry = raw_entry
-        raw_enabled = pull_request.get("isMergeQueueEnabled")
-        if is_merge_queue_enabled is None and isinstance(raw_enabled, bool):
-            is_merge_queue_enabled = raw_enabled
-        if isinstance(nodes, list):
-            threads.extend(node for node in nodes if isinstance(node, dict))
-    return threads, merge_queue_entry, is_merge_queue_enabled
+            if page.get("errors"):
+                raise WatchError(f"GitHub GraphQL errors: {page['errors']}")
+            pr = page["data"]["repository"]["pullRequest"]
+            current = pr["headRefOid"]
+            if not isinstance(current, str) or not current:
+                raise WatchError("GraphQL returned no PR head")
+            if head is not None and head != current:
+                raise WatchError("PR head changed during pagination", retryable=True)
+            head = current
+            result.update({key: pr.get(key) for key in ("headRefOid", "mergeQueueEntry", "isMergeQueueEnabled")})
+            more = False
+            for key, variable in connections.items():
+                connection = pr[key]
+                nodes = connection["nodes"]
+                info = connection["pageInfo"]
+                if not isinstance(nodes, list) or not isinstance(info.get("hasNextPage"), bool):
+                    raise WatchError(f"malformed {key} connection")
+                for node in nodes:
+                    if not isinstance(node, dict) or not isinstance(node.get("id"), str):
+                        raise WatchError(f"malformed {key} node")
+                    collected[key][node["id"]] = node
+                if info["hasNextPage"]:
+                    cursor = info.get("endCursor")
+                    if not isinstance(cursor, str) or not cursor or cursor == cursors.get(variable):
+                        raise WatchError(f"invalid {key} pagination cursor")
+                    cursors[variable] = cursor
+                    more = True
+        except (KeyError, TypeError, AttributeError) as error:
+            raise WatchError("incomplete GitHub review/queue response") from error
+        if not more:
+            return {**result, **{key: list(nodes.values()) for key, nodes in collected.items()}}
 
 
 def collect_target(target: Target, settings: Settings, runner: Runner) -> dict[str, object]:
-    repo_value = runner.json(
-        [
-            "gh",
-            "repo",
-            "view",
-            "--json",
-            "nameWithOwner,url,mergeCommitAllowed,rebaseMergeAllowed,squashMergeAllowed",
-        ],
-        target.path,
-    )
+    repo_value = getattr(runner, "repositories", {}).get(target.path)
+    if repo_value is None:
+        repo_value = runner.json(
+            [
+                "gh",
+                "repo",
+                "view",
+                "--json",
+                "nameWithOwner,url,mergeCommitAllowed,rebaseMergeAllowed,squashMergeAllowed",
+            ],
+            target.path,
+        )
     if not isinstance(repo_value, dict) or not isinstance(repo_value.get("nameWithOwner"), str):
         raise WatchError("gh repo view did not return nameWithOwner")
+    if hasattr(runner, "repositories"):
+        runner.repositories[target.path] = repo_value
     repository = repo_value["nameWithOwner"]
     repository_url = repo_value.get("url")
     hostname = urlparse(repository_url).hostname if isinstance(repository_url, str) else None
@@ -701,11 +738,18 @@ def collect_target(target: Target, settings: Settings, runner: Runner) -> dict[s
             check_args,
             target.path,
             allowed_codes=frozenset({0, 1, 8}),
-            empty_value=[],
         )
-        threads, merge_queue_entry, is_merge_queue_enabled = pull_request_auxiliary_state(
+        auxiliary = pull_request_auxiliary_state(
             runner, target.path, repository, pr_value["number"], hostname
         )
+        if auxiliary["headRefOid"] != pr_value.get("headRefOid"):
+            raise WatchError("PR head changed while collecting checks/reviews", retryable=True)
+        threads = auxiliary["reviewThreads"]
+        pr_value["reviews"] = auxiliary["reviews"]
+        pr_value["comments"] = auxiliary["comments"]
+        pr_value["reactions"] = auxiliary["reactions"]
+        merge_queue_entry = auxiliary["mergeQueueEntry"]
+        is_merge_queue_enabled = auxiliary["isMergeQueueEnabled"]
 
     return {
         "path": str(target.path),
@@ -717,7 +761,7 @@ def collect_target(target: Target, settings: Settings, runner: Runner) -> dict[s
             "squashMergeAllowed": repo_value.get("squashMergeAllowed"),
         },
         "pr": pr_value,
-        "checks": checks if isinstance(checks, list) else [],
+        "checks": checks,
         "reviewThreads": threads,
         "mergeQueueEntry": merge_queue_entry,
         "isMergeQueueEnabled": is_merge_queue_enabled,
@@ -745,11 +789,64 @@ def latest_reviews(pr: dict[str, object]) -> dict[str, dict[str, object]]:
     return latest
 
 
-def review_commit_oid(review: dict[str, object]) -> str | None:
-    commit = review.get("commit")
-    if isinstance(commit, dict) and isinstance(commit.get("oid"), str):
-        return commit["oid"]
-    return None
+def feedback_items(pr: dict[str, object]) -> list[dict[str, object]]:
+    items = []
+    for kind, field in (("review", "reviews"), ("comment", "comments")):
+        for item in pr.get(field, []):
+            body = item.get("body") or ""
+            if not isinstance(body, str):
+                raise WatchError(f"malformed {kind} body")
+            if not body.strip():
+                continue
+            # Our bot commands are requests, never evidence of a completed review.
+            if kind == "comment" and body.strip() in {
+                "@coderabbitai approve", "@coderabbitai review", "@codex review",
+            }:
+                continue
+            digest = hashlib.sha256(body.encode()).hexdigest()
+            items.append({"id": item.get("id"), "kind": kind, "body": body,
+                          "author": item.get("author"), "url": item.get("url"),
+                          "token": f"{item.get('id')}:{digest}"})
+    return items
+
+
+def feedback_path(settings: Settings) -> Path | None:
+    return settings.cursor_path.with_suffix(".feedback.json") if settings.cursor_path else None
+
+
+def read_feedback(settings: Settings) -> dict[str, object]:
+    path = feedback_path(settings)
+    if path is None or not path.exists():
+        return {}
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(value, dict) or not all(isinstance(v, dict) for v in value.values()):
+            raise ValueError("expected feedback evidence records")
+        if any(v.get("verdict") not in {"addressed", "non-actionable"}
+               or not isinstance(v.get("evidence"), str) or not v["evidence"].strip()
+               for v in value.values()):
+            raise ValueError("feedback acknowledgement lacks disposition or evidence")
+        return value
+    except (OSError, ValueError) as error:
+        raise WatchError(f"invalid feedback evidence {path}: {error}") from error
+
+
+def acknowledge_feedback(settings: Settings, value: dict[str, object], tokens: list[str],
+                         verdict: str | None, evidence: str | None) -> None:
+    if verdict not in {"addressed", "non-actionable"} or not evidence or not evidence.strip():
+        raise WatchError("--ack-feedback requires --verdict and concrete --evidence")
+    path = feedback_path(settings)
+    if path is None:
+        raise WatchError("--ack-feedback requires a durable --cursor")
+    available = {item["token"]: target for target in value["targets"]
+                 for item in target.get("reviews", {}).get("feedback", [])}
+    if any(token not in available for token in tokens):
+        raise WatchError("feedback changed or is absent; inspect the latest observation before acknowledging")
+    records = read_feedback(settings)
+    for token in tokens:
+        records[token] = {"verdict": verdict, "evidence": evidence.strip(),
+                          "headSha": available[token]["pr"]["headSha"], "at": utc_now()}
+    atomic_json(path, records)
 
 
 def compact_thread(thread: dict[str, object]) -> dict[str, object]:
@@ -757,13 +854,16 @@ def compact_thread(thread: dict[str, object]) -> dict[str, object]:
     nodes = comments.get("nodes", []) if isinstance(comments, dict) else []
     last = nodes[-1] if isinstance(nodes, list) and nodes else {}
     author = last.get("author") if isinstance(last, dict) else None
+    original = thread.get("originalComment", {}).get("nodes", [])
     return {
+        "originalComment": original[0] if original else None,
         "id": thread.get("id"),
         "path": thread.get("path"),
         "line": thread.get("line") or thread.get("originalLine"),
         "isOutdated": bool(thread.get("isOutdated")),
         "author": author.get("login") if isinstance(author, dict) else None,
         "url": last.get("url") if isinstance(last, dict) else None,
+        "body": last.get("body") if isinstance(last, dict) else None,
     }
 
 
@@ -795,8 +895,6 @@ def parse_checks(
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     """Return (valid_checks, malformations). Never silently drop bad rows."""
     malformations: list[dict[str, object]] = []
-    if checks_value is None:
-        return [], []
     if not isinstance(checks_value, list):
         return [], [{"reason": "checks is not a list", "value_type": type(checks_value).__name__}]
 
@@ -881,6 +979,8 @@ def is_verified_ready(
     review_decision: str,
     actions: Sequence[dict[str, object]],
     pending: Sequence[dict[str, object]],
+    allowed_merge_states: frozenset[str] = READY_SAFE_MERGE_STATES,
+    allow_empty_checks: bool = False,
 ) -> bool:
     """Explicit positive predicate for verified merge readiness. Fail closed otherwise."""
     if actions or pending:
@@ -889,9 +989,9 @@ def is_verified_ready(
         return False
     if mergeable not in READY_SAFE_MERGEABLE:
         return False
-    if merge_state not in READY_SAFE_MERGE_STATES:
+    if merge_state not in allowed_merge_states:
         return False
-    if not checks:
+    if not checks and not allow_empty_checks:
         return False
     if unresolved or missing_reviewers:
         return False
@@ -921,7 +1021,7 @@ def classify_target(
     pr = raw.get("pr")
     if not isinstance(pr, dict):
         raise WatchError("fixture or collector target is missing pr object")
-    checks_value = raw.get("checks", [])
+    checks_value = raw.get("checks")
     checks, check_malformations = parse_checks(checks_value)
     threads_value = raw.get("reviewThreads", [])
     threads = [thread for thread in threads_value if isinstance(thread, dict)] if isinstance(threads_value, list) else []
@@ -942,24 +1042,76 @@ def classify_target(
     head_raw = pr.get("headRefOid")
     head_sha = head_raw.strip() if isinstance(head_raw, str) else ""
     reviews = latest_reviews(pr)
-    missing_reviewers: list[str] = []
-    for reviewer in required_reviewers:
-        review = reviews.get(normalize_login(reviewer))
-        if (
-            review is None
-            or review.get("state") != "APPROVED"
-            or review_commit_oid(review) != head_sha
-            or not head_sha
-        ):
-            missing_reviewers.append(reviewer)
-
+    completed = {normalize_login(review.get("author", {}).get("login", ""))
+                 for review in pr.get("reviews", [])
+                 if isinstance(review.get("author"), dict)
+                 and review.get("state") in {"APPROVED", "COMMENTED", "CHANGES_REQUESTED"}}
+    reactions = list(pr.get("reactions", []))
+    for comment in pr.get("comments", []):
+        if str(comment.get("body", "")).strip().startswith("@codex review"):
+            reactions.extend(comment.get("reactions", {}).get("nodes", []))
+    completed.update(normalize_login(r["user"]["login"]) for r in reactions
+                     if r.get("content") == "THUMBS_UP" and isinstance(r.get("user"), dict))
+    missing_reviewers = [reviewer for reviewer in required_reviewers
+                         if normalize_login(reviewer) not in completed]
+    feedback = [item for item in feedback_items(pr)
+                if item["token"] not in raw.get("handledFeedback", {})]
+    mergeable = str(pr.get("mergeable") or "UNKNOWN").upper()
+    merge_state = str(pr.get("mergeStateStatus") or "UNKNOWN").upper()
+    required_only = raw.get("checkPolicy") == "required"
+    allowed_merge_states = READY_SAFE_MERGE_STATES
+    if required_only:
+        # Native --required selection can exclude a failing optional status.
+        allowed_merge_states |= {"UNSTABLE"}
+    if raw.get("isMergeQueueEnabled") is True:
+        # Queue admission uses GitHub's protected path after the known gates pass.
+        allowed_merge_states |= {"BLOCKED"}
+    review_decision = str(pr.get("reviewDecision") or "").upper()
+    # A later COMMENTED review is not a new approval vote. GitHub decides whether
+    # retained approvals satisfy its stale-review/CODEOWNER/last-push rules.
+    votes = latest_reviews({"reviews": [r for r in pr.get("reviews", [])
+                                        if r.get("state") != "COMMENTED"]})
+    approved = review_decision == "APPROVED" or (
+        not review_decision and any(r.get("state") == "APPROVED" for r in votes.values())
+    )
     failed_checks = check_buckets["fail"] + check_buckets["cancel"]
     pending_checks = check_buckets["pending"]
+    review_running = any("coderabbit" in str(c.get("name", "")).lower()
+                         or "codex" in str(c.get("name", "")).lower() for c in pending_checks)
+    review_running = review_running or any(
+        any(bot in str(c.get("name", c.get("context", ""))).lower() for bot in ("coderabbit", "codex"))
+        and (c.get("status") in {"QUEUED", "IN_PROGRESS"} or c.get("state") == "PENDING")
+        for c in pr.get("statusCheckRollup", [])
+    )
+    for reviewer in required_reviewers:
+        activity = [r for r in reactions if isinstance(r.get("user"), dict)
+                    and normalize_login(r["user"].get("login", "")) == normalize_login(reviewer)]
+        last_eye = max((str(r.get("createdAt", "")) for r in activity if r.get("content") == "EYES"), default="")
+        last_complete = max(
+            [str(r.get("createdAt", "")) for r in activity if r.get("content") == "THUMBS_UP"]
+            + [str(r.get("submittedAt", "")) for r in pr.get("reviews", [])
+               if isinstance(r.get("author"), dict) and normalize_login(r["author"].get("login", "")) == normalize_login(reviewer)],
+            default="",
+        )
+        review_running = review_running or last_eye > last_complete
+    if "coderabbitai" in {normalize_login(r) for r in required_reviewers}:
+        current_review = any(
+            normalize_login(r.get("author", {}).get("login", "")) == "coderabbitai"
+            and r.get("state") in {"APPROVED", "COMMENTED", "CHANGES_REQUESTED"}
+            and (r.get("commit") or {}).get("oid") == head_sha
+            for r in pr.get("reviews", []) if isinstance(r.get("author"), dict)
+        )
+        current_check = any(
+            "coderabbit" in str(c.get("name", c.get("context", ""))).lower()
+            and (c.get("conclusion") in {"SUCCESS", "NEUTRAL", "SKIPPED"}
+                 or c.get("state") == "SUCCESS")
+            for c in pr.get("statusCheckRollup", [])
+        )
+        review_running = review_running or not (current_review or current_check)
     actions: list[dict[str, object]] = []
     pending: list[dict[str, object]] = []
-    mergeable = str(pr.get("mergeable") or "UNKNOWN")
-    merge_state = str(pr.get("mergeStateStatus") or "UNKNOWN")
-    review_decision = str(pr.get("reviewDecision") or "")
+    if review_running:
+        pending.append({"type": "review_running", "nextAction": "wait for the automatic incremental review"})
     provenance = auto_merge_provenance(pr)
     merge_queue_entry_raw = raw.get("mergeQueueEntry")
     merge_queue_entry = (
@@ -985,17 +1137,24 @@ def classify_target(
                 "threads": [compact_thread(thread) for thread in unresolved],
             }
         )
-    if review_decision == "CHANGES_REQUESTED" and (
-        strict_changes_requested or unresolved or not pending_checks
-    ):
+    if feedback:
+        actions.append({"type": "review_feedback", "items": feedback})
+    if review_decision == "CHANGES_REQUESTED" and (strict_changes_requested or unresolved):
         actions.append({"type": "changes_requested"})
-    elif review_decision == "CHANGES_REQUESTED":
-        pending.append(
-            {
-                "type": "review_rerun",
-                "reason": "changes requested with no unresolved threads while checks are pending",
-            }
-        )
+    if not approved:
+        requests = [c for c in pr.get("comments", [])
+                    if str(c.get("body", "")).strip().startswith("@coderabbitai approve")]
+        last_request = max((str(c.get("createdAt", "")) for c in requests), default="")
+        last_review = max((str(r.get("submittedAt", "")) for r in pr.get("reviews", [])
+                           if isinstance(r.get("author"), dict)
+                           and normalize_login(r["author"].get("login", "")) == "coderabbitai"), default="")
+        if not (unresolved or feedback or missing_reviewers or review_running or failed_checks or pending_checks):
+            if not last_request or last_request < last_review:
+                actions.append({"type": "approval_needed", "suggestedCommand": "@coderabbitai approve",
+                                "reason": "reviews triaged; obtain an effective approval without another review pass"})
+        pending.append({"type": "review_required", "reviewRunning": review_running,
+                        "approvalRequestedAt": last_request or None,
+                        "nextAction": "observe automatic review/approval; inspect eligible approvers if it cannot satisfy policy"})
 
     if not head_sha:
         pending.append(
@@ -1012,7 +1171,7 @@ def classify_target(
                 "details": check_malformations,
             }
         )
-    if not checks and not check_malformations:
+    if not checks and not check_malformations and not required_only:
         pending.append(
             {
                 "type": "checks",
@@ -1039,118 +1198,46 @@ def classify_target(
                     "checks": [check.get("name") for check in items],
                 }
             )
-    if review_decision == "REVIEW_REQUIRED":
-        pending.append({"type": "review_required"})
     if missing_reviewers:
         pending.append({"type": "required_reviewers", "reviewers": missing_reviewers})
     if mergeable == "UNKNOWN" or merge_state == "UNKNOWN":
         pending.append({"type": "mergeability"})
     elif mergeable not in READY_SAFE_MERGEABLE | {"CONFLICTING"}:
         pending.append({"type": "mergeability", "mergeable": mergeable})
-    # Non-whitelisted merge states (UNSTABLE, HAS_HOOKS, novel values) fail closed.
+    # Merge states outside the selected check/queue policy fail closed.
     if (
-        merge_state not in READY_SAFE_MERGE_STATES
+        merge_state not in allowed_merge_states
         and merge_state not in HANDLED_UNSAFE_MERGE_STATES
     ):
         pending.append({"type": "merge_state", "mergeStateStatus": merge_state})
 
     pr_state = str(pr.get("state") or "UNKNOWN")
     blocked_reason: str | None = None
+    same_landing_head = await_merge_head is not None and head_sha == await_merge_head
+    enrollment = provenance is not None or merge_queue_entry is not None
     if pr_state == "MERGED" or pr.get("mergedAt"):
-        if await_merge_head is not None and head_sha != await_merge_head:
-            state = "blocked"
-            actions = [
-                {
-                    "type": "authorization_stale",
-                    "reason": "merged pull request head differs from landing authorization",
-                    "expectedHead": await_merge_head,
-                    "currentHead": head_sha or None,
-                }
-            ]
-            pending = []
-        else:
-            state = "merged"
-            actions = []
-            pending = []
-    elif pr_state != "OPEN":
+        state, actions, pending = "merged", [], []
+    elif pr_state != "OPEN" or bool(pr.get("isDraft")):
         state = "blocked"
-        blocked_reason = f"pull request is {pr_state.lower()}"
-    elif bool(pr.get("isDraft")):
-        state = "blocked"
-        blocked_reason = "pull request is draft"
-    elif await_merge_head is not None and head_sha != await_merge_head:
-        state = "blocked"
-        actions = [
-            {
-                "type": "authorization_stale",
-                "reason": "pull request head changed after landing authorization",
-                "expectedHead": await_merge_head,
-                "currentHead": head_sha or None,
-            }
-        ]
-        pending = []
-    elif await_merge_head is not None:
-        queue_state = str(merge_queue_entry.get("state") or "") if merge_queue_entry else ""
-        queue_head_raw = (
-            merge_queue_entry.get("headCommit") if merge_queue_entry is not None else None
-        )
-        queue_head = (
-            queue_head_raw.get("oid") if isinstance(queue_head_raw, dict) else None
-        )
-        evidence_present = (
-            provenance is not None
-            if await_merge_mode == "auto"
-            else merge_queue_entry is not None
-        )
-        evidence_invalid = (
-            await_merge_mode == "queue"
-            and (
-                queue_state == "UNMERGEABLE"
-                or (isinstance(queue_head, str) and queue_head and queue_head != head_sha)
-            )
-        )
-        if evidence_invalid:
-            state = "blocked"
-            actions = [
-                {
-                    "type": "landing_enrollment_rejected",
-                    "mode": await_merge_mode,
-                    "queueState": queue_state or None,
-                    "queueHead": queue_head,
-                    "currentHead": head_sha,
-                }
-            ]
-            pending = []
-        elif not evidence_present and not allow_missing_landing_evidence:
-            state = "blocked"
-            actions = [
-                {
-                    "type": "landing_enrollment_missing",
-                    "mode": await_merge_mode,
-                    "reason": "approved landing enrollment is no longer observable",
-                }
-            ]
-            pending = []
-        else:
-            state = "awaiting_merge"
-            actions = []
-            pending = [
-                {
-                    "type": "merge_completion",
-                    "headSha": head_sha,
-                    "mode": await_merge_mode,
-                    "autoMerge": provenance,
-                    "mergeQueueEntry": merge_queue_entry,
-                    "evidencePending": not evidence_present,
-                }
-            ]
-    elif provenance is not None:
-        # Externally configured auto-merge is terminal and read-only: report provenance,
-        # clear dispatch actions, and do not wait on or repair remaining gates.
-        state = "auto_merge"
-        actions = []
+        blocked_reason = "pull request is draft" if pr.get("isDraft") else f"pull request is {pr_state.lower()}"
     elif actions:
         state = "actionable"
+    elif same_landing_head and not enrollment and not allow_missing_landing_evidence:
+        state = "actionable"
+        actions.append({"type": "landing_enrollment_missing", "mode": await_merge_mode,
+                        "reason": "reconcile the absent landing request and current gates before retrying"})
+    elif merge_queue_entry and (merge_queue_entry.get("state") == "UNMERGEABLE" or (
+        isinstance(merge_queue_entry.get("headCommit"), dict)
+        and merge_queue_entry["headCommit"].get("oid") not in {None, head_sha}
+    )):
+        state = "actionable"
+        actions.append({"type": "landing_enrollment_rejected",
+                        "queueState": merge_queue_entry.get("state"),
+                        "reason": "queue rejected the entry or its head no longer matches"})
+    elif enrollment or (same_landing_head and allow_missing_landing_evidence):
+        state = "awaiting_merge"
+        pending.append({"type": "merge_completion", "headSha": head_sha,
+                        "mode": await_merge_mode, "evidencePending": not enrollment})
     elif pending:
         state = "pending"
     elif is_verified_ready(
@@ -1164,6 +1251,8 @@ def classify_target(
         review_decision=review_decision,
         actions=actions,
         pending=pending,
+        allowed_merge_states=allowed_merge_states,
+        allow_empty_checks=required_only,
     ):
         state = "ready"
     elif merge_state == "BLOCKED":
@@ -1196,12 +1285,14 @@ def classify_target(
             "mergeable": mergeable,
             "mergeStateStatus": merge_state,
             "reviewDecision": review_decision or None,
+            "mergedAt": pr.get("mergedAt"),
+            "mergeCommit": pr.get("mergeCommit"),
             "autoMergeEnabled": provenance is not None,
             "autoMerge": provenance,
             "mergeQueueEntry": merge_queue_entry,
             "isMergeQueueEnabled": raw.get("isMergeQueueEnabled"),
         },
-        "landingAuthorization": (
+        "landingRequest": (
             {
                 "expectedHead": await_merge_head,
                 "currentHead": head_sha or None,
@@ -1230,6 +1321,9 @@ def classify_target(
             "unresolvedThreadCount": len(unresolved),
             "requiredReviewers": list(required_reviewers),
             "missingRequiredReviewers": missing_reviewers,
+            "completedReviewers": sorted(completed),
+            "approved": approved,
+            "feedback": feedback,
         },
         "actions": actions,
         "pending": pending,
@@ -1237,22 +1331,11 @@ def classify_target(
 
 
 def aggregate_state(targets: Sequence[dict[str, object]]) -> str:
-    states = [str(target.get("state")) for target in targets]
-    if not states:
-        return "blocked"
-    if "blocked" in states:
-        return "blocked"
-    if "actionable" in states:
-        return "actionable"
-    if "awaiting_merge" in states:
-        return "awaiting_merge"
-    if "pending" in states:
-        return "pending"
-    if all(state == "merged" for state in states):
-        return "merged"
-    if all(state in {"merged", "auto_merge"} for state in states):
-        return "auto_merge"
-    return "ready"
+    states = {str(target.get("state")) for target in targets}
+    for state in ("actionable", "ready", "blocked", "pending", "awaiting_merge", "merged"):
+        if state in states:
+            return state
+    return "blocked"
 
 
 def snapshot(
@@ -1260,9 +1343,10 @@ def snapshot(
     settings: Settings,
     allow_missing_landing_evidence: bool = False,
 ) -> dict[str, object]:
+    handled = read_feedback(settings)
     targets = [
         classify_target(
-            target,
+            {**target, "handledFeedback": handled, "checkPolicy": settings.check_policy},
             settings.required_reviewers,
             settings.strict_changes_requested,
             settings.await_merge_head,
@@ -1323,8 +1407,37 @@ def collect_snapshot(
     if settings.fixture is not None:
         return load_fixture(settings.fixture, settings, allow_missing_landing_evidence)
     targets = discover_targets(settings, runner, cwd)
-    raw_targets = [collect_target(target, settings, runner) for target in targets]
-    return snapshot(raw_targets, settings, allow_missing_landing_evidence)
+    raw_targets, failures = [], []
+    for target in targets:
+        if target in runner.target_failures:
+            failures.append(runner.target_failures[target])
+            continue
+        try:
+            raw_targets.append(collect_target(target, settings, runner))
+            runner.target_errors.pop(target, None)
+        except WatchError as error:
+            if len(targets) == 1:
+                raise
+            attempts = runner.target_errors.get(target, 0) + 1
+            runner.target_errors[target] = attempts
+            retry = error.retryable and attempts < settings.max_errors
+            detail = {"type": "watch_retry" if retry else "watch_error",
+                      "reason": str(error), "retryable": error.retryable}
+            failure = {"path": str(target.path), "selector": target.selector,
+                       "state": "pending" if retry else "blocked",
+                       "actions": [] if retry else [detail],
+                       "pending": [detail] if retry else []}
+            failures.append(failure)
+            if not retry:
+                # Resume after recovery with a new runner; do not repeat a denied call
+                # just because an independent PR still needs observation.
+                runner.target_failures[target] = failure
+    value = snapshot(raw_targets, settings, allow_missing_landing_evidence)
+    value["targets"].extend(failures)
+    value["state"] = aggregate_state(value["targets"])
+    value["actions"].extend({"path": target["path"], **action}
+                            for target in failures for action in target["actions"])
+    return value
 
 
 def error_snapshot(error: WatchError) -> dict[str, object]:
@@ -1353,7 +1466,7 @@ def emit(value: dict[str, object], pretty: bool) -> None:
 
 
 def snapshot_fingerprint(value: dict[str, object]) -> str:
-    comparable = {key: item for key, item in value.items() if key != "observedAt"}
+    comparable = {key: item for key, item in value.items() if key not in {"observedAt", "waitingSince"}}
     return json.dumps(comparable, sort_keys=True, separators=(",", ":"))
 
 
@@ -1385,11 +1498,11 @@ def target_cursor_fingerprints(value: dict[str, object]) -> dict[str, str]:
     return fingerprints
 
 
-def read_cursor(path: Path) -> dict[str, str]:
+def read_cursor(path: Path) -> dict[str, object]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        return {}
+        return {"version": SCHEMA_VERSION, "targets": {}}
     except (OSError, json.JSONDecodeError) as error:
         raise WatchError(f"could not read cursor {path}: {error}") from error
     if not isinstance(value, dict) or value.get("version") != SCHEMA_VERSION:
@@ -1400,41 +1513,26 @@ def read_cursor(path: Path) -> dict[str, str]:
         for key, fingerprint in targets.items()
     ):
         raise WatchError(f"cursor {path} has invalid target fingerprints")
-    return targets
-
-
-def cursor_matches(value: dict[str, object], path: Path | None) -> bool:
-    if path is None:
-        return False
-    fingerprints = target_cursor_fingerprints(value)
-    if not fingerprints:
-        return False
-    previous = read_cursor(path)
-    return all(previous.get(key) == fingerprint for key, fingerprint in fingerprints.items())
+    return value
 
 
 def write_cursor(value: dict[str, object], path: Path | None) -> None:
     if path is None:
         return
     previous = read_cursor(path)
-    previous.update(target_cursor_fingerprints(value))
-    payload = json.dumps(
-        {"version": SCHEMA_VERSION, "targets": previous},
-        sort_keys=True,
-        separators=(",", ":"),
-    )
+    previous["targets"].update(target_cursor_fingerprints(value))
+    previous["observation"] = {"fingerprint": snapshot_fingerprint(value),
+                               "waitingSince": value.get("waitingSince")}
+    atomic_json(path, previous)
+
+
+def atomic_json(path: Path, value: object) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as handle:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                         prefix=f".{path.name}.", delete=False) as handle:
             temporary = Path(handle.name)
-            handle.write(payload)
+            json.dump(value, handle, sort_keys=True, separators=(",", ":"))
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
@@ -1442,7 +1540,7 @@ def write_cursor(value: dict[str, object], path: Path | None) -> None:
     except OSError as error:
         if "temporary" in locals():
             temporary.unlink(missing_ok=True)
-        raise WatchError(f"could not write cursor {path}: {error}") from error
+        raise WatchError(f"could not write {path}: {error}") from error
 
 
 def append_observation(value: dict[str, object], path: Path | None) -> None:
@@ -1459,10 +1557,13 @@ def append_observation(value: dict[str, object], path: Path | None) -> None:
         raise WatchError(f"could not append observations file {path}: {error}") from error
 
 
-def emit_observation(value: dict[str, object], settings: Settings) -> None:
+def emit_observation(value: dict[str, object], settings: Settings, announce: bool = True) -> None:
     append_observation(value, settings.observations_path)
     write_cursor(value, settings.cursor_path)
-    emit(value, settings.pretty)
+    if settings.output_path is not None:
+        atomic_json(settings.output_path, value)
+    if announce:
+        emit(value, settings.pretty)
 
 
 def sleep_duration(base: float, jitter: float) -> float:
@@ -1473,65 +1574,87 @@ def sleep_duration(base: float, jitter: float) -> float:
 
 def watch(settings: Settings, runner: Runner, cwd: Path) -> int:
     started = time.monotonic()
+    runner.deadline = started + settings.timeout_seconds if settings.timeout_seconds else None
     consecutive_errors = 0
-    last_fingerprint: str | None = None
-    error_delay = settings.interval_seconds
+    last_fingerprint = None
+    last_value = None
+    unchanged_since = started
+    waiting_since = utc_now()
+    checkpoint = read_cursor(settings.cursor_path).get("observation", {}) if settings.cursor_path else {}
+    if not isinstance(checkpoint, dict):
+        raise WatchError("invalid cursor observation checkpoint")
+    delay = settings.interval_seconds
 
     while True:
-        if settings.timeout_seconds and time.monotonic() - started >= settings.timeout_seconds:
-            timeout_value = error_snapshot(WatchError("watch timeout reached"))
-            timeout_value["state"] = "timeout"
-            emit_observation(timeout_value, settings)
+        now = time.monotonic()
+        if runner.deadline is not None and now >= runner.deadline:
+            value = {**(last_value or error_snapshot(WatchError("no successful observation"))),
+                     "state": "timeout", "observedAt": utc_now(),
+                     "errors": ["watch timeout reached; resume using the retained target state"]}
+            emit_observation(value, settings)
             return EXIT_TIMEOUT
         try:
-            elapsed = time.monotonic() - started
-            landing_elapsed = (
-                (datetime.now(timezone.utc) - settings.await_merge_since).total_seconds()
-                if settings.await_merge_since is not None
-                else elapsed
-            )
-            value = collect_snapshot(
-                settings,
-                runner,
-                cwd,
-                allow_missing_landing_evidence=(
-                    settings.await_merge_head is not None
-                    and landing_elapsed < settings.await_merge_grace_seconds
-                ),
-            )
+            elapsed = (datetime.now(timezone.utc) - settings.await_merge_since).total_seconds() if settings.await_merge_since else now - started
+            value = collect_snapshot(settings, runner, cwd, allow_missing_landing_evidence=(
+                settings.await_merge_head is not None and elapsed < settings.await_merge_grace_seconds
+            ))
             consecutive_errors = 0
-            error_delay = settings.interval_seconds
         except WatchError as error:
             consecutive_errors += 1
             if not error.retryable or consecutive_errors >= settings.max_errors:
-                emit_observation(error_snapshot(error), settings)
+                value = error_snapshot(error)
+                if last_value is not None:
+                    value["lastObservation"] = last_value
+                emit_observation(value, settings)
                 return EXIT_BLOCKED
             if settings.verbose:
                 print(f"retryable watcher error: {error}", file=sys.stderr, flush=True)
-            time.sleep(sleep_duration(error_delay, settings.jitter))
-            error_delay = min(settings.max_interval_seconds, error_delay * 2)
-            continue
-
-        fingerprint = snapshot_fingerprint(value)
-        state = str(value["state"])
-
-        if settings.mode == "once":
-            emit_observation(value, settings)
-            return exit_code(state)
-
-        if settings.mode == "until-actionable":
-            if state == "actionable" and cursor_matches(value, settings.cursor_path):
-                pass
-            elif state not in {"pending", "awaiting_merge"}:
-                emit_observation(value, settings)
-                return exit_code(state)
+            delay = min(settings.max_interval_seconds, delay * 2)
         else:
-            if fingerprint != last_fingerprint:
+            fingerprint = snapshot_fingerprint(value)
+            changed = fingerprint != last_fingerprint
+            if changed:
+                unchanged_since = now
+                waiting_since = utc_now()
+                if last_fingerprint is None and checkpoint.get("fingerprint") == fingerprint:
+                    saved_since = checkpoint.get("waitingSince")
+                    if saved_since:
+                        if not isinstance(saved_since, str):
+                            raise WatchError("cursor waitingSince must be a timestamp")
+                        parsed = utc_timestamp(saved_since, "cursor waitingSince")
+                        unchanged_since -= max(0, (datetime.now(timezone.utc) - parsed).total_seconds())
+                        waiting_since = saved_since
+                delay = settings.interval_seconds
+            else:
+                delay = min(settings.max_interval_seconds, delay * 1.5)
+            state = str(value["state"])
+            if state in {"pending", "awaiting_merge"} and now - unchanged_since >= 900:
+                value["state"] = "actionable"
+                value["actions"].append({"type": "diagnose_wait", "secondsUnchanged": int(now - unchanged_since),
+                                         "reason": "inspect pending gates and cooldowns; do not blindly retrigger reviews"})
+                state, changed = "actionable", True
+                unchanged_since = now
+                waiting_since = utc_now()
+            value["waitingSince"] = waiting_since if state in {"pending", "awaiting_merge"} else None
+            last_value = value
+            if settings.mode == "once":
                 emit_observation(value, settings)
-                last_fingerprint = fingerprint
-            if state in {"ready", "auto_merge", "merged", "blocked"}:
                 return exit_code(state)
-        time.sleep(sleep_duration(settings.interval_seconds, settings.jitter))
+            # Replay unhandled work after a restart; the cursor records observations,
+            # never acknowledgements. Only in-process unchanged notifications are deduplicated.
+            terminal = state not in {"pending", "awaiting_merge"}
+            if settings.mode == "until-actionable" and terminal:
+                emit_observation(value, settings)
+                return exit_code(state)
+            if changed:
+                emit_observation(value, settings, announce=settings.mode == "watch")
+                last_fingerprint = snapshot_fingerprint(value)
+            if settings.mode == "watch" and (state == "merged" or all(
+                target["state"] in {"blocked", "merged"} for target in value["targets"]
+            )):
+                return exit_code(state)
+        remaining = max(0.0, runner.deadline - time.monotonic()) if runner.deadline else delay
+        time.sleep(min(remaining, sleep_duration(delay, settings.jitter)))
 
 
 def argument_parser() -> argparse.ArgumentParser:
@@ -1560,12 +1683,16 @@ def argument_parser() -> argparse.ArgumentParser:
         default=None,
         help="always treat CHANGES_REQUESTED as actionable",
     )
-    parser.add_argument("--reviewer", action="append", help="required reviewer login; repeatable")
+    parser.add_argument("--reviewer", action="append", help="required review participant (completion, not an approval vote); repeatable")
     parser.add_argument("--cursor", help="durable observation cursor path")
     parser.add_argument(
         "--observations-file",
         help="append emitted observations as NDJSON at this path",
     )
+    parser.add_argument("--output", help="atomic latest JSON observation file")
+    parser.add_argument("--ack-feedback", action="append", help="acknowledge a reviewed ID:digest token; repeatable")
+    parser.add_argument("--verdict", choices=("addressed", "non-actionable"))
+    parser.add_argument("--evidence", help="pushed fix and validation, or concrete non-actionability reason")
     parser.add_argument("--fixture", help="offline raw snapshot fixture")
     parser.add_argument(
         "--await-merge",
@@ -1595,7 +1722,14 @@ def argument_parser() -> argparse.ArgumentParser:
 
 
 def resolved_config(settings: Settings) -> dict[str, object]:
+    directory = Path(__file__).resolve().parent
+    manifest = directory.parents[2] / ".codex-plugin/plugin.json"
     return {
+        "pluginVersion": json.loads(manifest.read_text()).get("version") if manifest.is_file() else None,
+        "runtime": {str(path): hashlib.sha256(path.read_bytes()).hexdigest()
+                    for path in (directory / "pr_watch.py", directory / "pr_land.py",
+                                 *sorted(directory.parent.parent.glob("*/SKILL.md"))) if path.is_file()},
+        "outputPath": str(settings.output_path) if settings.output_path else None,
         "version": SCHEMA_VERSION,
         "mode": settings.mode,
         "intervalSeconds": settings.interval_seconds,
@@ -1643,6 +1777,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.print_config:
             emit(resolved_config(settings), settings.pretty)
             return EXIT_OBSERVED
+        if args.ack_feedback:
+            value = collect_snapshot(settings, Runner(), cwd)
+            acknowledge_feedback(settings, value, args.ack_feedback, args.verdict, args.evidence)
+            emit({"state": "feedback_recorded", "tokens": args.ack_feedback}, settings.pretty)
+            return EXIT_OBSERVED
+        if args.verdict or args.evidence:
+            raise WatchError("--verdict and --evidence require --ack-feedback")
         return watch(settings, Runner(), cwd)
     except WatchError as error:
         emit(error_snapshot(error), bool(getattr(args, "pretty", False)))

@@ -32,7 +32,7 @@ You agree not to use the plugin to:
 You are responsible for:
 
 - the repositories, credentials, and machine permissions you grant your coding agent;
-- reviewing commits, pushes, PR changes, and the exact per-PR landing confirmation before approval;
+- setting the intended scope of commits, pushes, PR changes, and protected landing when invoking a workflow;
 - complying with your employer's and customers' policies;
 - deciding whether to approve the guarded auto-merge or merge-queue request for a PR the plugin reports as ready.
 

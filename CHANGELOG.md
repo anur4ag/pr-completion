@@ -5,17 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [Unreleased — 0.4.0]
 
 ### Changed
 
-- `gh-review-comment-triage` now fixes findings convergently instead of point-wise: triage the full open-thread table before changing anything, sweep the whole defect class rather than only the flagged line, re-derive the surrounding invariants (callers, state transitions, error paths, falsified comments) for every fix, self-review the accumulated round diff with reviewer-grade scrutiny before it leaves the machine, and return one complete round for a single push. Style-level nits with defensible current code prefer a reasoned reply-and-resolve over a code change.
-- `take-pr-to-completion` review dispatch now requires triage to return one complete, self-reviewed round covering every open thread and pushes once per round, since reviewers re-review every push and partial rounds multiply review cycles.
+- Completion invocation authorizes protected landing through verified merge, across repair rounds and head changes. Explicitly narrower requests remain narrower.
+- Use one watcher inside the runtime monitor, with durable state and feedback receipts. Plain commit requests stay local.
+- Separate CodeRabbit/Codex participation from effective approval; observe automatic incremental reviews and use `@coderabbitai approve` only after findings are handled.
+- Collect paginated threads, review bodies, comments, reactions, and queue state through structured GitHub CLI output. Preserve native required-check and protected landing policy.
+- Replace prose and content-hash assertions with lifecycle regressions while retaining the sole landing-helper safety boundary.
 
-### Release metadata
+### Fixed
 
-- Pinned the immutable v0.3.0 tag commit, installable ZIP, portal ZIP, and portable content fingerprint after public release publication.
-- Marked the v0.3.0 Pages release link public and advanced hosted immutable-tag validation to v0.3.0.
+- Auto-merge enrollment no longer hides CI failures or review work.
+- Restarts replay unfinished actions; independent ready PRs are not hidden by pending dependencies or failed sibling observations.
+- Preserve valid approvals across comment-only reviews and expose edited top-level feedback.
+- Bound command/retry time, retain the latest state on timeout, and diagnose stalled waits without automatically triggering another review.
+- Historical release reconstruction reads matching historical submission materials. Source 0.4.0 is unpublished; published 0.3.0 integrity pins remain separate.
+
+### Breaking changes
+
+- `pr_land.py` lands under task authorization by default. Use `--dry-run` for a non-mutating plan; remove `--confirm` and `--policy-digest` from callers.
+- `requiredReviewers` means completed review participation; GitHub's effective approval and protection rules still gate landing.
 
 ## [0.3.0] - 2026-07-17
 

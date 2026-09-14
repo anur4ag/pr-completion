@@ -1,7 +1,7 @@
 {
   "name": "pr-completion",
-  "version": "0.3.0",
-  "description": "Validate and commit local changes, create and watch GitHub pull requests, then request an explicitly approved landing for each exact ready head.",
+  "version": "0.4.0",
+  "description": "Autonomously prepare, review, repair, and merge in-scope GitHub pull requests through protected landing.",
   "author": {
     "name": "Traycer",
     "url": "https://github.com/anur4ag"
@@ -19,8 +19,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "PR Completion",
-    "shortDescription": "Autonomously prepare, watch, and explicitly land pull requests",
-    "longDescription": "Discover changed repositories, create validated commits and pull requests, run a deterministic state-machine watcher, repair CI and review failures, resolve conflicts, request per-PR confirmation for the exact ready head, and observe an approved protected landing until merged or blocked.",
+    "shortDescription": "Take pull requests through reviews and protected merge",
+    "longDescription": "Own the in-scope PR lifecycle through verified merge. Reuse one managed watcher, handle CI and review findings, rely on automatic incremental reviews, obtain effective approval, and land through GitHub protections under the original task authorization.",
     "developerName": "Traycer",
     "category": "Productivity",
     "capabilities": [
@@ -34,7 +34,7 @@
     "logo": "./assets/traycer-icon.png",
     "logoDark": "./assets/traycer-icon-dark.png",
     "defaultPrompt": [
-      "Use $pr-completion:take-pr-to-completion to prepare and watch each pull request, ask me for per-PR landing confirmation at verified readiness, then observe any approved landing until merged or blocked."
+      "Use $pr-completion:take-pr-to-completion to take the in-scope PRs through checks, incremental reviews, repairs, and protected merge without repeated approval prompts."
     ]
   }
 }

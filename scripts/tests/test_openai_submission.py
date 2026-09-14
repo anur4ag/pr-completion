@@ -312,7 +312,7 @@ class PortalPackageValidationTests(unittest.TestCase):
             self.assertEqual(len(runtime["skills"]), 4)
             self.assertEqual(runtime["watcherState"], "ready")
             self.assertEqual(runtime["watcherActions"], [])
-            self.assertEqual(runtime["landingPlanState"], "confirmation_required")
+            self.assertEqual(runtime["landingPlanState"], "landing_planned")
 
     def test_working_tree_build_skips_content_pin_enforcement(self) -> None:
         """Working-tree path does not enforce published content pin."""
@@ -361,7 +361,6 @@ class PortalPackageValidationTests(unittest.TestCase):
         self.assertIn("--from-working-tree", workflow)
         self.assertIn("portal-plugin.zip", workflow)
         self.assertIn("sha256sum ./*.zip", workflow)
-        self.assertIn("explicit per-PR exact-head confirmation", workflow)
         self.assertNotIn("merge-ready only (no merge / auto-merge", workflow)
 
     def test_release_integrity_workflow_uses_both_byte_pins(self) -> None:

@@ -1,12 +1,12 @@
 # PR Completion
 
-A local skills plugin for Claude Code and Codex that prepares a GitHub pull request, watches its gates, repairs actionable failures, and—only with explicit per-PR approval—requests a protected landing and observes it to completion.
+A local skills plugin for Claude Code and Codex that owns in-scope GitHub PRs through **verified merge** under the invoking task's authorization.
 
-It validates and commits workspace changes, creates or finds PRs, monitors CI and reviews, triages feedback, and resolves conflicts. Direct use of the commit skill continues into this lifecycle unless you say local-only or commit-only.
+It prepares changes, reuses one managed watcher, repairs CI and review findings, observes automatic incremental review, obtains effective approval, and lands through GitHub protections. Head changes trigger fresh readiness evaluation without another user prompt or routine manual review request. The commit helper returns local commits to its caller.
 
 <div class="callout">
 
-**Safety boundary.** Routine autonomy reaches a verified-ready exact head. Landing requires a separate confirmation for each PR, warns that approval may merge immediately, and is revalidated before the guarded request. PR Completion never uses admin or protection bypass, force-push, history rewrite, or direct merge APIs.
+**Release status.** Version 0.4.0 is prepared locally; marketplace users receive these changes after publication. Invocation authorizes completion, while explicit local-only/stop-at-ready requests remain narrower. No admin/protection bypass, force-push, or blocking-review dismissal is permitted.
 
 </div>
 
@@ -32,8 +32,8 @@ See [Installation](installation.md) for version pinning, updates, local developm
 
 | Skill | Run it when |
 | --- | --- |
-| `take-pr-to-completion` | You want preparation, watcher repairs, per-PR landing confirmation, and observation until merged or blocked. |
-| `commit-workspace-changes` | Local changes need checks and commits; direct use normally hands off into PR creation and monitoring unless explicitly local-only. |
+| `take-pr-to-completion` | You want the in-scope PRs merged after checks, reviews, and repairs. |
+| `commit-workspace-changes` | Local changes need validation and commits; return evidence to the calling workflow. |
 | `gh-review-comment-triage` | Review threads need to be checked against current code, fixed when real, and resolved with evidence. |
 | `merge-conflict-resolution` | A merge, rebase, cherry-pick, or revert is conflicted and both sides' intent must be preserved. |
 
@@ -41,18 +41,17 @@ All four ship from one shared `skills/` tree. Claude Code and Codex load the sam
 
 ## Deterministic watcher
 
-The orchestrator repeatedly observes the PR and emits one machine-readable state. Its default durable cursor suppresses an identical actionable observation across relaunches:
+The watcher combines paginated review threads, review bodies, PR comments and reactions with structured GitHub check and merge metadata. One managed monitor runs it through repair, readiness and enrollment. It emits changes, keeps an atomic latest snapshot, and replays unfinished work after restart.
 
 ```text
-pending -> actionable -> repair -> new head -> re-observe
-                         |
-                         +-> ready -> confirm exact PR/head -> awaiting_merge -> merged
-                                  \-> stop at ready                 \-> blocked
+prepare -> watch -> repair/triage -> push -> automatic incremental review
+             |                                   |
+             +-------------- ready <-------------+
+                               |
+                      protected landing -> watch -> merged
 ```
 
-Every push invalidates the previous observation and any landing confirmation. `ready` is recalculated from checks, approvals, unresolved threads, and mergeability. `auto_merge` means another actor already configured it. `awaiting_merge` is emitted only after an approved request bound to the exact head.
-
-The autonomous loop launches the watcher in the background, consumes its single new observation on exit, dispatches repairs, and relaunches with the same cursor. An optional NDJSON observations file preserves emitted output across harness session recycling. A bot's standing `CHANGES_REQUESTED` decision is treated as a wait state while the current head has no unresolved review threads and checks are still pending.
+A pending dependent PR cannot hide a ready upstream PR. A failed gate remains actionable even after auto-merge enrollment. The agent judges review claims; durable acknowledgements track handled feedback by content so edited/new findings reappear. See [Skills and safety](skills.md) for the runtime interface and migration from 0.3.0.
 
 ## Requirements
 
@@ -69,7 +68,7 @@ Target repositories must also have their own build, lint, test, and hook depende
 ## Project reference
 
 - [Repository](https://github.com/anur4ag/pr-completion)
-- [Release v0.3.0](https://github.com/anur4ag/pr-completion/releases/tag/v0.3.0)
+- [Release v0.4.0 (pending)](https://github.com/anur4ag/pr-completion/releases/tag/v0.4.0)
 - [Skills and safety](skills.md)
 - [Support](support.md)
 - [Privacy](privacy.md)

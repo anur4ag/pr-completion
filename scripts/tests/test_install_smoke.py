@@ -242,7 +242,7 @@ class LiveCodexInstallSmoke(unittest.TestCase):
         self.assertIn("plugins/cache", str(install_path).replace("\\", "/"))
         self.assertNotEqual(install_path.resolve(), ROOT.resolve())
         watcher_states = {item["fixture"]: item["state"] for item in result["watcher"]}
-        self.assertEqual(watcher_states["external-auto-merge.json"], "auto_merge")
+        self.assertEqual(watcher_states["external-auto-merge.json"], "awaiting_merge")
 
 
 if __name__ == "__main__":

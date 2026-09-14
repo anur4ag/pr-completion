@@ -2,18 +2,16 @@
 """Guarded, per-PR landing request for PR Completion.
 
 This is the only shipped helper allowed to mutate GitHub merge state. It first
-re-runs the read-only watcher, requires the exact authorized head to remain
+re-runs the read-only watcher, requires the observed head to remain
 verified ready, and then invokes GitHub CLI without admin or protection bypass.
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import subprocess
 import sys
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
@@ -21,7 +19,6 @@ from typing import Sequence
 
 EXIT_OK = 0
 EXIT_BLOCKED = 20
-WARNING = "This landing request may merge the pull request immediately."
 METHOD_POLICY_FIELDS = {
     "merge": "mergeCommitAllowed",
     "rebase": "rebaseMergeAllowed",
@@ -50,7 +47,10 @@ def run(args: Sequence[str], cwd: Path) -> subprocess.CompletedProcess[str]:
             text=True,
             capture_output=True,
             check=False,
+            timeout=60,
         )
+    except subprocess.TimeoutExpired as error:
+        raise LandingError("command timed out; reconcile GitHub state before retrying") from error
     except FileNotFoundError as error:
         raise LandingError(f"required command not found: {args[0]}") from error
     if result.returncode != 0:
@@ -60,41 +60,30 @@ def run(args: Sequence[str], cwd: Path) -> subprocess.CompletedProcess[str]:
 
 
 def watcher_snapshot(
-    repository: Path,
-    selector: str | None,
-    fixture: Path | None,
-    config: Path | None,
-    no_config: bool,
-    reviewers: Sequence[str],
-    check_policy: str | None,
-    strict_changes_requested: bool,
+    repository: Path, selector: str | None, fixture: Path | None,
+    config: Path | None, no_config: bool, reviewers: Sequence[str],
+    check_policy: str | None, strict_changes_requested: bool, cursor: Path | None = None,
 ) -> dict[str, object]:
     watcher = Path(__file__).with_name("pr_watch.py")
-    with tempfile.TemporaryDirectory(prefix="pr-completion-land-") as temporary:
-        command = [
-            sys.executable,
-            str(watcher),
-            "--mode",
-            "once",
-            "--cursor",
-            str(Path(temporary) / "cursor.json"),
-        ]
-        if fixture is not None:
-            command.extend(["--no-config", "--fixture", str(fixture)])
-        else:
-            target = str(repository) if selector is None else f"{repository}={selector}"
-            command.extend(["--target", target])
-            if no_config:
-                command.append("--no-config")
-            elif config is not None:
-                command.extend(["--config", str(config)])
-            for reviewer in reviewers:
-                command.extend(["--reviewer", reviewer])
-            if check_policy is not None:
-                command.extend(["--check-policy", check_policy])
-            if strict_changes_requested:
-                command.append("--strict-changes-requested")
-        result = run(command, repository)
+    command = [sys.executable, str(watcher), "--mode", "once"]
+    if fixture is not None:
+        command.extend(["--no-config", "--fixture", str(fixture)])
+    else:
+        target = str(repository) if selector is None else f"{repository}={selector}"
+        command.extend(["--target", target])
+        if no_config:
+            command.append("--no-config")
+        elif config is not None:
+            command.extend(["--config", str(config)])
+        for reviewer in reviewers:
+            command.extend(["--reviewer", reviewer])
+        if check_policy is not None:
+            command.extend(["--check-policy", check_policy])
+        if strict_changes_requested:
+            command.append("--strict-changes-requested")
+    if cursor is not None:
+        command.extend(["--cursor", str(cursor)])
+    result = run(command, repository)
     try:
         value = json.loads(result.stdout)
     except json.JSONDecodeError as error:
@@ -122,7 +111,7 @@ def verified_target(
     current_head = pr.get("headSha")
     if current_head != expected_head:
         raise LandingError(
-            f"landing authorization is stale (expected {expected_head}, current {current_head})"
+            f"PR head changed; resume observation (expected {expected_head}, current {current_head})"
         )
     url = pr.get("url")
     if not isinstance(url, str) or not url:
@@ -147,43 +136,6 @@ def verified_target(
     return target
 
 
-def readiness_policy(snapshot: dict[str, object]) -> tuple[dict[str, object], str]:
-    raw = snapshot.get("policy")
-    if not isinstance(raw, dict):
-        raise LandingError("read-only watcher did not report its resolved readiness policy")
-    policy = {
-        "source": raw.get("source"),
-        "configPath": raw.get("configPath"),
-        "checkPolicy": raw.get("checkPolicy"),
-        "strictChangesRequested": raw.get("strictChangesRequested"),
-        "requiredReviewers": raw.get("requiredReviewers"),
-    }
-    if policy["source"] not in {
-        "no-config",
-        "explicit-config",
-        "discovered-config",
-        "defaults",
-    }:
-        raise LandingError("resolved readiness policy source is invalid")
-    config_path = policy["configPath"]
-    if policy["source"] in {"explicit-config", "discovered-config"}:
-        if not isinstance(config_path, str) or not config_path:
-            raise LandingError("resolved readiness config path is invalid")
-    elif config_path is not None:
-        raise LandingError("resolved readiness policy unexpectedly reports a config path")
-    if policy["checkPolicy"] not in {"all", "required"}:
-        raise LandingError("resolved readiness check policy is invalid")
-    if not isinstance(policy["strictChangesRequested"], bool):
-        raise LandingError("resolved changes-requested policy is invalid")
-    reviewers = policy["requiredReviewers"]
-    if not isinstance(reviewers, list) or not all(isinstance(item, str) for item in reviewers):
-        raise LandingError("resolved required-reviewer policy is invalid")
-    digest = hashlib.sha256(
-        json.dumps(policy, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()
-    return policy, digest
-
-
 def landing_command(
     url: str,
     head: str,
@@ -200,34 +152,9 @@ def landing_command(
     return [*command, "--auto", f"--{method}"]
 
 
-def plan_payload(
-    target: dict[str, object],
-    head: str,
-    mode: str,
-    method: str | None,
-    policy: dict[str, object],
-    policy_digest: str,
-) -> dict[str, object]:
-    pr = target["pr"]
-    assert isinstance(pr, dict)
-    return {
-        "schemaVersion": 1,
-        "state": "confirmation_required",
-        "requiresConfirmation": True,
-        "warning": WARNING,
-        "repository": target.get("repository"),
-        "pr": {"number": pr.get("number"), "url": pr.get("url")},
-        "headSha": head,
-        "mode": mode,
-        "method": method,
-        "readinessPolicy": policy,
-        "readinessPolicyDigest": policy_digest,
-    }
-
-
 def argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Request an explicitly approved PR landing action for an exact head SHA.",
+        description="Land an in-scope PR under task authorization after fresh protected readiness checks.",
     )
     parser.add_argument("--repo", default=".", help="pull request repository path")
     parser.add_argument("--pr", help="pull request number, URL, or branch selector")
@@ -247,19 +174,12 @@ def argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--check-policy", choices=("all", "required"))
     parser.add_argument("--strict-changes-requested", action="store_true")
-    parser.add_argument("--head", required=True, help="exact authorized pull request head SHA")
+    parser.add_argument("--head", required=True, help="observed head for the race guard; a changed head resumes watching")
     parser.add_argument("--mode", required=True, choices=("auto", "queue"))
     parser.add_argument("--method", choices=("merge", "squash", "rebase"))
-    parser.add_argument(
-        "--confirm",
-        action="store_true",
-        help="perform the landing request after a fresh exact-head readiness check",
-    )
-    parser.add_argument(
-        "--policy-digest",
-        help="resolved readiness-policy digest emitted by the confirmation plan",
-    )
-    parser.add_argument("--fixture", help="offline watcher fixture; planning only")
+    parser.add_argument("--dry-run", action="store_true", help="print the protected landing plan without mutation")
+    parser.add_argument("--cursor", help="same watcher cursor, including its feedback evidence")
+    parser.add_argument("--fixture", help="offline watcher fixture; requires --dry-run")
     parser.add_argument("--pretty", action="store_true")
     return parser
 
@@ -271,7 +191,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     config = Path(args.config).expanduser().resolve() if args.config else None
     reviewers = tuple(args.reviewer or ())
     try:
-        if args.confirm and fixture is not None:
+        if not args.dry_run and fixture is not None:
             raise LandingError("offline fixtures cannot authorize a landing mutation")
         head = args.head.strip()
         if not head:
@@ -286,36 +206,27 @@ def main(argv: Sequence[str] | None = None) -> int:
             reviewers,
             args.check_policy,
             args.strict_changes_requested,
+            Path(args.cursor).expanduser().resolve() if args.cursor else None,
         )
-        target = verified_target(snapshot, head, args.mode, args.method)
-        policy, policy_digest = readiness_policy(snapshot)
-        plan = plan_payload(
-            target,
-            head,
-            args.mode,
-            args.method,
-            policy,
-            policy_digest,
-        )
-        if not args.confirm:
-            emit(plan, args.pretty)
+        if snapshot.get("state") == "merged":
+            emit(snapshot, args.pretty)
             return EXIT_OK
-
-        if args.policy_digest != policy_digest:
-            raise LandingError(
-                "resolved readiness policy changed or --policy-digest was not preserved"
-            )
-
+        target = verified_target(snapshot, head, args.mode, args.method)
         pr = target["pr"]
-        assert isinstance(pr, dict)
         url = str(pr["url"])
         command = landing_command(url, head, args.mode, args.method)
+        plan = {"schemaVersion": 1, "state": "landing_planned",
+                "repository": target.get("repository"), "pr": pr,
+                "headSha": head, "mode": args.mode, "method": args.method,
+                "readinessPolicy": snapshot.get("policy"), "command": command}
+        if args.dry_run:
+            emit(plan, args.pretty)
+            return EXIT_OK
         result = run(command, repository)
         emit(
             {
                 **plan,
                 "state": "landing_requested",
-                "requiresConfirmation": False,
                 "command": command,
                 "stdout": result.stdout.strip() or None,
                 "requestedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),

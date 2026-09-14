@@ -24,7 +24,32 @@
         "reviewDecision": "APPROVED",
         "autoMergeRequest": null,
         "mergedAt": null,
-        "reviews": []
+        "reviews": [
+          {
+            "id": "CR-ready",
+            "author": {
+              "login": "coderabbitai"
+            },
+            "state": "APPROVED",
+            "body": "",
+            "commit": {
+              "oid": "head-ready"
+            },
+            "submittedAt": "2026-09-15T00:00:00Z"
+          },
+          {
+            "id": "CX-ready",
+            "author": {
+              "login": "chatgpt-codex-connector"
+            },
+            "state": "COMMENTED",
+            "body": "",
+            "commit": {
+              "oid": "head-ready"
+            },
+            "submittedAt": "2026-09-15T00:00:00Z"
+          }
+        ]
       },
       "checks": [
         {

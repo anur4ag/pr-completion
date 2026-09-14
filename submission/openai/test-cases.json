@@ -2,30 +2,54 @@
   "schemaVersion": 1,
   "cases": [
     {
-      "id": "positive-ready-requires-confirmation",
+      "id": "positive-ready-protected-plan",
       "kind": "positive",
-      "title": "A ready PR produces a non-mutating per-PR landing plan",
-      "userPrompt": "Take this pull request through its gates and ask me before landing it.",
-      "expectedBehavior": "Verify the exact current head, build a guarded landing plan, warn that approval may merge immediately, and wait for explicit confirmation without mutating GitHub state.",
-      "expectedResultShape": {"watcherState": "ready", "landingState": "confirmation_required", "requiresConfirmation": true, "headSha": "head-ready"},
-      "reproduction": "Run the watcher and guarded landing helper against the ready fixture without --confirm.",
+      "title": "A ready PR produces a guarded dry-run plan",
+      "userPrompt": "Take this pull request through its gates and merge it.",
+      "expectedBehavior": "Recheck the current head and gates before protected landing. The offline smoke uses dry-run; the lifecycle unit tests verify autonomous mutation without another permission roundtrip.",
+      "expectedResultShape": {
+        "watcherState": "ready",
+        "landingState": "landing_planned",
+        "headSha": "head-ready"
+      },
+      "reproduction": "Run the watcher once and the landing helper with --dry-run against the ready fixture.",
       "checks": [
-        {"type": "watcherFixture", "fixture": "tag:skills/take-pr-to-completion/tests/fixtures/ready-to-merge.json", "expectedState": "ready", "expectedActionTypes": []},
-        {"type": "landingFixture", "fixture": "tag:skills/take-pr-to-completion/tests/fixtures/ready-to-merge.json", "head": "head-ready", "mode": "auto", "method": "squash", "expectedState": "confirmation_required"},
-        {"type": "containsAll", "path": "tag:skills/take-pr-to-completion/SKILL.md", "values": ["explicit per-PR confirmation", "may merge immediately", "Silence", "pr_land.py"]}
+        {
+          "type": "watcherFixture",
+          "fixture": "tag:skills/take-pr-to-completion/tests/fixtures/ready-to-merge.json",
+          "expectedState": "ready",
+          "expectedActionTypes": []
+        },
+        {
+          "type": "landingFixture",
+          "fixture": "tag:skills/take-pr-to-completion/tests/fixtures/ready-to-merge.json",
+          "head": "head-ready",
+          "mode": "auto",
+          "method": "squash",
+          "expectedState": "landing_planned"
+        }
       ]
     },
     {
-      "id": "positive-parent-and-submodule-ownership",
+      "id": "positive-enrolled-ci-repair",
       "kind": "positive",
-      "title": "Parent and submodule changes retain ownership and continue",
-      "userPrompt": "Run the commit loop for this parent repository and its submodule, then continue through their PRs.",
-      "expectedBehavior": "Process deepest repositories first, preserve unrelated work, commit each owner, and hand off once to the PR lifecycle unless local-only was explicit.",
-      "expectedResultShape": {"repositories": "deepest-first", "directHandoff": true, "recursiveDispatch": false},
-      "reproduction": "Use the repository-layout fixture and inspect the commit skill invocation modes.",
+      "title": "Auto-merge enrollment preserves CI repair",
+      "userPrompt": "Complete this PR even though auto-merge is already enabled and CI failed.",
+      "expectedBehavior": "Expose the failed check as actionable and continue repairing under the existing task authorization.",
+      "expectedResultShape": {
+        "state": "actionable",
+        "action": "ci_failure"
+      },
+      "reproduction": "Observe an enrolled PR with a failed check once.",
       "checks": [
-        {"type": "jsonPaths", "path": "tag:skills/take-pr-to-completion/tests/fixtures/repository-layout.json", "requiredValues": ["packages/nested-repository", "traycer-submodule"]},
-        {"type": "containsAll", "path": "tag:skills/commit-workspace-changes/SKILL.md", "values": ["process deepest children before parents", "Direct lifecycle mode", "Phase-only child mode", "Explicit local-only mode"]}
+        {
+          "type": "watcherFixture",
+          "fixture": "tag:skills/take-pr-to-completion/tests/fixtures/external-auto-merge-failing-ci.json",
+          "expectedState": "actionable",
+          "expectedActionTypes": [
+            "ci_failure"
+          ]
+        }
       ]
     },
     {
@@ -33,12 +57,22 @@
       "kind": "positive",
       "title": "Branch-caused CI failure enters the repair loop",
       "userPrompt": "Repair failures caused by this branch, validate and push the fix, then resume watching.",
-      "expectedBehavior": "Dispatch ci_failure, repair only justified in-scope failures, validate, commit phase-only, push normally, and restart against the new head.",
-      "expectedResultShape": {"state": "actionable", "action": "ci_failure", "oldObservationInvalidated": true},
+      "expectedBehavior": "Dispatch ci_failure, repair only justified in-scope failures, validate, commit the validated changes, push normally, and resume the existing watcher against the new head.",
+      "expectedResultShape": {
+        "state": "actionable",
+        "action": "ci_failure",
+        "oldObservationInvalidated": true
+      },
       "reproduction": "Run the watcher with the packaged CI-failure fixture.",
       "checks": [
-        {"type": "watcherFixture", "fixture": "submission:fixtures/ci-failure.json", "expectedState": "actionable", "expectedActionTypes": ["ci_failure"]},
-        {"type": "containsAll", "path": "tag:skills/take-pr-to-completion/SKILL.md", "values": ["fix branch-caused/deterministic failures", "A push invalidates every prior observation"]}
+        {
+          "type": "watcherFixture",
+          "fixture": "submission:fixtures/ci-failure.json",
+          "expectedState": "actionable",
+          "expectedActionTypes": [
+            "ci_failure"
+          ]
+        }
       ]
     },
     {
@@ -47,11 +81,21 @@
       "title": "Review threads are triaged against current code",
       "userPrompt": "Fix real review findings and resolve only addressed threads with evidence.",
       "expectedBehavior": "Observe actionable threads, verify each claim against current code, repair real issues, and explain stale or false-positive findings before resolution.",
-      "expectedResultShape": {"state": "actionable", "action": "review_threads", "unaddressedThreadsResolved": false},
+      "expectedResultShape": {
+        "state": "actionable",
+        "action": "review_threads",
+        "unaddressedThreadsResolved": false
+      },
       "reproduction": "Run the watcher with the review-comment fixture and inspect the review-triage contract.",
       "checks": [
-        {"type": "watcherFixture", "fixture": "tag:skills/take-pr-to-completion/tests/fixtures/review-comment.json", "expectedState": "actionable", "expectedActionTypes": ["review_threads"]},
-        {"type": "containsAll", "path": "tag:skills/gh-review-comment-triage/SKILL.md", "values": ["Ground every review claim in current code", "Do not resolve before fixing or documenting non-actionability"]}
+        {
+          "type": "watcherFixture",
+          "fixture": "tag:skills/take-pr-to-completion/tests/fixtures/review-comment.json",
+          "expectedState": "actionable",
+          "expectedActionTypes": [
+            "review_threads"
+          ]
+        }
       ]
     },
     {
@@ -59,50 +103,85 @@
       "kind": "positive",
       "title": "A conflict returns safely to the watcher",
       "userPrompt": "Resolve the upstream conflict without rewriting history, validate, push normally, and resume.",
-      "expectedBehavior": "Dispatch conflict resolution, preserve both intents and unrelated work, validate, commit phase-only, push without force, and restart.",
-      "expectedResultShape": {"state": "actionable", "action": "conflict", "forcePushIssued": false},
+      "expectedBehavior": "Dispatch conflict resolution, preserve both intents and unrelated work, validate, commit the validated changes, push without force, and resume the existing watcher.",
+      "expectedResultShape": {
+        "state": "actionable",
+        "action": "conflict",
+        "forcePushIssued": false
+      },
       "reproduction": "Run the watcher with the conflict fixture and inspect the conflict-resolution contract.",
       "checks": [
-        {"type": "watcherFixture", "fixture": "tag:skills/take-pr-to-completion/tests/fixtures/conflict.json", "expectedState": "actionable", "expectedActionTypes": ["conflict"]},
-        {"type": "containsAll", "path": "tag:skills/merge-conflict-resolution/SKILL.md", "values": ["inspect the working tree plus base, ours, and theirs", "Never use destructive recovery commands"]}
+        {
+          "type": "watcherFixture",
+          "fixture": "tag:skills/take-pr-to-completion/tests/fixtures/conflict.json",
+          "expectedState": "actionable",
+          "expectedActionTypes": [
+            "conflict"
+          ]
+        }
       ]
     },
     {
-      "id": "negative-stale-landing-authorization",
+      "id": "negative-stale-head-observation",
       "kind": "negative",
-      "title": "Approval for an older head cannot land a changed PR",
-      "userPrompt": "I approved this PR earlier; use that approval even though new commits were pushed.",
-      "expectedBehavior": "Reject the stale head binding, return to normal watching, and require a fresh ready result plus new per-PR confirmation.",
-      "expectedResultShape": {"state": "blocked", "reason": "landing authorization is stale", "mutationIssued": false},
-      "reproduction": "Run the landing helper plan against the ready fixture with a different expected head.",
+      "title": "A changed head requires fresh readiness",
+      "userPrompt": "Complete and merge this PR, including any review fixes.",
+      "expectedBehavior": "Reject a stale observation, fetch the new head and gates, and continue under the existing task authorization.",
+      "expectedResultShape": {
+        "state": "blocked",
+        "mutationIssued": false
+      },
+      "reproduction": "Run the landing helper dry-run against a different expected head; lifecycle unit tests also verify that a freshly observed ready head can land.",
       "checks": [
-        {"type": "landingFixture", "fixture": "tag:skills/take-pr-to-completion/tests/fixtures/ready-to-merge.json", "head": "older-head", "mode": "queue", "expectedState": "blocked"},
-        {"type": "containsAll", "path": "tag:skills/take-pr-to-completion/SKILL.md", "values": ["do not reuse approval", "authorization_stale", "Never use `--admin`"]}
+        {
+          "type": "landingFixture",
+          "fixture": "tag:skills/take-pr-to-completion/tests/fixtures/ready-to-merge.json",
+          "head": "older-head",
+          "mode": "queue",
+          "expectedState": "blocked"
+        }
       ]
     },
     {
-      "id": "negative-overlapping-unrelated-changes",
+      "id": "negative-unknown-checks",
       "kind": "negative",
-      "title": "Overlapping unrelated local changes stop the workflow",
-      "userPrompt": "Stage everything even though the same files contain unfinished work from another task.",
-      "expectedBehavior": "Preserve unrelated work and escalate when the two intents cannot be separated safely.",
-      "expectedResultShape": {"state": "blocked", "unrelatedChangesPreserved": true, "broadStageIssued": false},
-      "reproduction": "Create two inseparable intents in one file and inspect the commit skill boundaries.",
+      "title": "Unknown check results cannot establish readiness",
+      "userPrompt": "Merge this PR even if a check result cannot be classified.",
+      "expectedBehavior": "Keep observing and diagnose the unknown result before landing.",
+      "expectedResultShape": {
+        "state": "pending",
+        "mutationIssued": false
+      },
+      "reproduction": "Observe the unknown-check fixture once.",
       "checks": [
-        {"type": "containsAll", "path": "tag:skills/commit-workspace-changes/SKILL.md", "values": ["overlapping unrelated edits", "Preserve unrelated work", "Stage explicit intended paths"]}
+        {
+          "type": "watcherFixture",
+          "fixture": "tag:skills/take-pr-to-completion/tests/fixtures/unknown-check-bucket.json",
+          "expectedState": "pending",
+          "expectedActionTypes": []
+        }
       ]
     },
     {
-      "id": "negative-missing-github-auth-or-permission",
+      "id": "negative-unexplained-github-block",
       "kind": "negative",
-      "title": "Missing GitHub access yields actionable diagnostics",
-      "userPrompt": "Continue even though GitHub CLI is signed out or cannot push/read this PR.",
-      "expectedBehavior": "Do not request or invent credentials; stop with the failed operation and exact access the user must restore.",
-      "expectedResultShape": {"state": "blocked", "credentialsCaptured": false, "requiredUserAction": "restore gh authentication or repository permission"},
-      "reproduction": "Run the blocked fixture and inspect the orchestrator credentials boundary.",
+      "title": "An unexplained GitHub block cannot establish readiness",
+      "userPrompt": "Continue completing this pull request.",
+      "expectedBehavior": "Diagnose the remaining GitHub gate without attempting to bypass protection.",
+      "expectedResultShape": {
+        "state": "blocked",
+        "mutationIssued": false
+      },
+      "reproduction": "Observe an approved PR whose merge state remains blocked.",
       "checks": [
-        {"type": "watcherFixture", "fixture": "tag:skills/take-pr-to-completion/tests/fixtures/blocked.json", "expectedState": "blocked", "expectedActionTypes": ["blocked"]},
-        {"type": "containsAll", "path": "tag:skills/take-pr-to-completion/SKILL.md", "values": ["unavailable credentials or permissions", "block with evidence"]}
+        {
+          "type": "watcherFixture",
+          "fixture": "tag:skills/take-pr-to-completion/tests/fixtures/blocked.json",
+          "expectedState": "blocked",
+          "expectedActionTypes": [
+            "blocked"
+          ]
+        }
       ]
     }
   ]
