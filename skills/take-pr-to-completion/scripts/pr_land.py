@@ -63,6 +63,7 @@ def watcher_snapshot(
     repository: Path, selector: str | None, fixture: Path | None,
     config: Path | None, no_config: bool, reviewers: Sequence[str],
     check_policy: str | None, strict_changes_requested: bool, cursor: Path | None = None,
+    require_approval: bool = False,
 ) -> dict[str, object]:
     watcher = Path(__file__).with_name("pr_watch.py")
     command = [sys.executable, str(watcher), "--mode", "once"]
@@ -81,6 +82,8 @@ def watcher_snapshot(
             command.extend(["--check-policy", check_policy])
         if strict_changes_requested:
             command.append("--strict-changes-requested")
+        if require_approval:
+            command.append("--require-approval")
     if cursor is not None:
         command.extend(["--cursor", str(cursor)])
     result = run(command, repository)
@@ -174,6 +177,7 @@ def argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--check-policy", choices=("all", "required"))
     parser.add_argument("--strict-changes-requested", action="store_true")
+    parser.add_argument("--require-approval", action="store_true")
     parser.add_argument("--head", required=True, help="observed head for the race guard; a changed head resumes watching")
     parser.add_argument("--mode", required=True, choices=("auto", "queue"))
     parser.add_argument("--method", choices=("merge", "squash", "rebase"))
@@ -207,6 +211,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.check_policy,
             args.strict_changes_requested,
             Path(args.cursor).expanduser().resolve() if args.cursor else None,
+            args.require_approval,
         )
         if snapshot.get("state") == "merged":
             emit(snapshot, args.pretty)

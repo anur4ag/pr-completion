@@ -107,15 +107,17 @@ class LandingTests(unittest.TestCase):
             root = Path(directory)
             pr_land.watcher_snapshot(root, "7", None, root / "policy.json", False,
                                      ("coderabbitai", "chatgpt-codex-connector"), "required", True,
-                                     root / "cursor.json")
+                                     root / "cursor.json", True)
             command = run.call_args.args[0]
             self.assertEqual(command.count("--reviewer"), 2)
             for flag, expected in (("--config", str(root / "policy.json")), ("--cursor", str(root / "cursor.json")),
                                    ("--check-policy", "required"), ("--mode", "once")):
                 self.assertEqual(command[command.index(flag) + 1], expected)
             self.assertIn("--strict-changes-requested", command)
+            self.assertIn("--require-approval", command)
             pr_land.watcher_snapshot(root, None, None, None, True, (), None, False)
             self.assertIn("--no-config", run.call_args.args[0])
+            self.assertNotIn("--require-approval", run.call_args.args[0])
             pr_land.watcher_snapshot(root, None, None, None, False, (), None, False)
             self.assertNotIn("--no-config", run.call_args.args[0])
 
