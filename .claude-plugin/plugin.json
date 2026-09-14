@@ -1,8 +1,8 @@
 {
   "name": "pr-completion",
   "displayName": "PR Completion",
-  "version": "0.3.0",
-  "description": "Validate and commit local changes, create and watch GitHub pull requests, then request an explicitly approved landing for each exact ready head.",
+  "version": "0.4.0",
+  "description": "Autonomously prepare, review, repair, and merge in-scope GitHub pull requests through protected landing.",
   "author": {
     "name": "Traycer",
     "url": "https://github.com/anur4ag"

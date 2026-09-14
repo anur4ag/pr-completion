@@ -777,7 +777,7 @@ def validate_cases(
                     fixture = Path(temporary) / f"{case['id']}.json"
                     fixture.write_bytes(fixture_data)
                     completed = subprocess.run(
-                        [sys.executable, "-B", str(watcher), "--fixture", str(fixture)],
+                        [sys.executable, "-B", str(watcher), "--mode", "once", "--fixture", str(fixture)],
                         cwd=str(extracted),
                         capture_output=True,
                         text=True,
@@ -824,6 +824,7 @@ def validate_cases(
                         sys.executable,
                         "-B",
                         str(lander),
+                        *(["--dry-run"] if '"--dry-run"' in lander.read_text() else []),
                         "--fixture",
                         str(fixture),
                         "--head",
@@ -972,7 +973,7 @@ def validate_extracted_portal_runtime(
         run_cwd = root / "third-party-repository"
         run_cwd.mkdir()
         completed = subprocess.run(
-            [sys.executable, "-B", str(watcher), "--fixture", str(fixture)],
+            [sys.executable, "-B", str(watcher), "--mode", "once", "--fixture", str(fixture)],
             cwd=run_cwd,
             capture_output=True,
             text=True,
@@ -999,6 +1000,7 @@ def validate_extracted_portal_runtime(
                 sys.executable,
                 "-B",
                 str(lander),
+                *(["--dry-run"] if '"--dry-run"' in lander.read_text() else []),
                 "--fixture",
                 str(fixture),
                 "--head",
@@ -1023,10 +1025,9 @@ def validate_extracted_portal_runtime(
             landing_plan = json.loads(landing.stdout)
         except json.JSONDecodeError as error:
             raise SubmissionError("extracted portal landing helper emitted invalid JSON") from error
-        if landing_plan.get("state") != "confirmation_required" or not landing_plan.get(
-            "requiresConfirmation"
-        ):
-            raise SubmissionError("extracted portal landing helper skipped confirmation")
+        expected_plan = "landing_planned" if '"--dry-run"' in lander.read_text() else "confirmation_required"
+        if landing_plan.get("state") != expected_plan:
+            raise SubmissionError("extracted portal landing helper did not return a dry-run plan")
         return {
             "skills": sorted(discovered_skills),
             "watcherState": observation["state"],
@@ -1063,17 +1064,32 @@ def package_submission(
     portal_meta = validate_portal_package(
         portal_members, expected_version=package_version
     )
-    materials = load_materials(materials_root)
-    listing_result = validate_listing(
-        materials_root,
-        materials,
-        expected_version=package_version,
-        expected_ref=target_ref,
-        enforce_published_pins=not from_working_tree,
-    )
-    prompt_count = validate_prompts(materials_root)
-    case_results = validate_cases(materials_root, source_members)
-    url_results = check_urls(listing_result["urls"]) if probe_urls else []
+    with tempfile.TemporaryDirectory(prefix="pr-completion-pinned-materials-") as temporary:
+        if not from_working_tree:
+            materials_root = Path(temporary)
+            for relative in ALLOWED_MATERIAL_PATHS:
+                path = materials_root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(_run_git(repo, ["show", f"{source_ref}:submission/openai/{relative}"]))
+            # A tag cannot contain its own commit or final archive checksum.
+            # Fill absent post-publication pins only after verifying its identity/content.
+            listing_path = materials_root / "listing.json"
+            listing = _load_json(listing_path)
+            for field, pin in {"commit": source_commit, "portalPluginSHA256": RELEASE_PORTAL_SHA256}.items():
+                if not listing["source"].get(field):
+                    listing["source"][field] = pin
+            listing_path.write_text(json.dumps(listing, indent=2) + "\n", encoding="utf-8")
+        materials = load_materials(materials_root)
+        listing_result = validate_listing(
+            materials_root,
+            materials,
+            expected_version=package_version,
+            expected_ref=target_ref,
+            enforce_published_pins=not from_working_tree,
+        )
+        prompt_count = validate_prompts(materials_root)
+        case_results = validate_cases(materials_root, source_members)
+        url_results = check_urls(listing_result["urls"]) if probe_urls else []
 
     out_dir = out_dir.resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1132,8 +1148,8 @@ def package_submission(
             "version": package_version,
             "memberCount": portal_meta["memberCount"],
             "portalPluginSHA256": portal_digest,
-            "pinnedInstallableSHA256": RELEASE_INSTALLABLE_SHA256 or None,
-            "pinnedPortalSHA256": RELEASE_PORTAL_SHA256 or None,
+            "pinnedInstallableSHA256": RELEASE_INSTALLABLE_SHA256 if not from_working_tree else None,
+            "pinnedPortalSHA256": RELEASE_PORTAL_SHA256 if not from_working_tree else None,
         },
         "materials": {
             "members": len(materials),

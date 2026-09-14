@@ -34,7 +34,7 @@ This project does **not** claim that every historical commit on the release line
 
 `skills/take-pr-to-completion/scripts/pr_land.py` is the sole authorized
 merge-state mutation surface. It may request normal protected auto-merge or
-merge-queue enrollment only after a fresh readiness check and explicit per-PR,
-exact-head confirmation. Do not add alternate CLI, REST, GraphQL, alias, or
+merge-queue enrollment under the invoking task's standing authorization after a
+fresh readiness check and an exact-head race guard. Do not add alternate CLI, REST, GraphQL, alias, or
 wrapper mutation paths. Admin bypasses, force-pushes, history rewrites, and
 protection bypasses remain prohibited.

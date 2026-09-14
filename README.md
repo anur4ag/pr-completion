@@ -1,23 +1,23 @@
 # PR Completion
 
-Autonomous pull request preparation and explicitly approved landing for [Claude Code](https://code.claude.com/) and [Codex](https://chatgpt.com/codex).
+Autonomous pull request completion for [Claude Code](https://code.claude.com/) and [Codex](https://chatgpt.com/codex).
 
-Validate and commit local work, create or find its GitHub PR, then drive it through CI, review triage, and conflicts. At **verified readiness**, PR Completion asks for explicit confirmation for that PR and exact head before requesting auto-merge or a required merge-queue entry, then watches until merged or blocked.
+Invoke PR Completion to delegate the in-scope PR through **verified merge**. It prepares changes, uses one managed watcher, repairs CI/review findings, observes automatic incremental reviews, obtains effective approval, and uses GitHub's protected landing path. Routine head changes do not require another user approval or manual review request.
 
-> **Status.** Source package `VERSION` `0.3.0` is published as [`v0.3.0`](https://github.com/anur4ag/pr-completion/releases/tag/v0.3.0) with immutable installable, skills-source, and portal artifacts plus SHA-256 checksums.
+> **Status.** Source `VERSION` `0.4.0` is prepared for release. The last published release is [v0.3.0](https://github.com/anur4ag/pr-completion/releases/tag/v0.3.0), which retains the previous confirmation-based contract. The new behavior is available from this working tree and must be published before marketplace users receive it.
 > Docs: [https://anur4ag.github.io/pr-completion/](https://anur4ag.github.io/pr-completion/).
-> Directory publisher identity: **Business — Traycer**. OpenAI portal upload remains a user-controlled step and is not claimed submitted or approved here.
+> Publisher: **Business — Traycer**. No directory submission or release publication is claimed by this change.
 
 ## Skills
 
-| Skill | Authority |
+| Skill | Responsibility |
 | --- | --- |
-| `take-pr-to-completion` | Orchestrates commit, push, PR creation, watcher repairs, per-PR landing confirmation, and post-request observation. Only the guarded helper may request a normal protected landing. |
-| `commit-workspace-changes` | Discovers changes, runs checks, and commits. Direct invocation normally hands off to the full lifecycle; explicit local-only/commit-only wording stops after commits. |
-| `gh-review-comment-triage` | Fetches review threads, verifies claims against current code, patches real issues, and replies/resolves with evidence. |
-| `merge-conflict-resolution` | Resolves merge/rebase/cherry-pick/revert conflicts by reconstructing both intents and validating the result. |
+| `take-pr-to-completion` | Own task-scoped preparation, review, repair, protected landing and verified merge. |
+| `commit-workspace-changes` | Validate and commit local task changes; return to its caller. |
+| `gh-review-comment-triage` | Verify inline and top-level findings, repair a complete round, reply and resolve with evidence. |
+| `merge-conflict-resolution` | Preserve both sides' intent and validate the combined result. |
 
-Invoke skills by namespaced id, for example `$pr-completion:take-pr-to-completion`.
+Invoke skills by namespaced id, for example `$pr-completion:take-pr-to-completion`. Explicit local-only or stop-at-ready requests retain their narrower scope.
 
 ## Prerequisites
 
@@ -50,10 +50,10 @@ claude plugin marketplace add anur4ag/pr-completion
 claude plugin install pr-completion@pr-completion --scope user
 ```
 
-Pin the marketplace to a release tag, then install:
+After v0.4.0 is published, pin the marketplace to that release tag, then install:
 
 ```bash
-claude plugin marketplace add anur4ag/pr-completion@v0.3.0
+claude plugin marketplace add anur4ag/pr-completion@v0.4.0
 claude plugin install pr-completion@pr-completion --scope user
 ```
 
@@ -79,11 +79,11 @@ codex plugin marketplace add anur4ag/pr-completion
 codex plugin add pr-completion@pr-completion
 ```
 
-Pin the marketplace to a release tag:
+After v0.4.0 is published, pin the marketplace to that release tag:
 
 ```bash
-codex plugin marketplace add anur4ag/pr-completion@v0.3.0
-# or: codex plugin marketplace add anur4ag/pr-completion --ref v0.3.0
+codex plugin marketplace add anur4ag/pr-completion@v0.4.0
+# or: codex plugin marketplace add anur4ag/pr-completion --ref v0.4.0
 codex plugin add pr-completion@pr-completion
 ```
 
@@ -109,15 +109,14 @@ codex plugin marketplace remove pr-completion
 2. Authenticate GitHub CLI: `gh auth status` should succeed for that host.
 3. Ask the agent to drive the PR with `$pr-completion:take-pr-to-completion`.
 4. The agent prepares or creates the PR and autonomously handles normal CI, review, and conflict cycles.
-5. At `ready`, review the per-PR prompt. It names the repository, PR URL, exact head SHA, action/method, and warns that approval may merge immediately.
-6. Approve that PR's landing or stop at readiness. Approval is never reused for another PR or a changed head.
-7. After approval, expect a terminal report of **merged** or **blocked**; without approval, expect **ready** with evidence.
+5. At `ready`, the helper revalidates the observed head and lands under the original task authorization.
+6. Expect verified **merged**, or a concrete blocker and observation status. A submitted landing request alone is not completion.
 
 ## Safety boundary
 
-Routine work stops at verified readiness until you explicitly approve one PR and one current head SHA. The audited `pr_land.py` helper is the only merge-state mutation surface. It rechecks the resolved watcher policy, readiness, head identity, queue requirement, and allowed merge method immediately before using GitHub's normal protected auto-merge or merge-queue path.
+Invocation authorizes the task's PR lifecycle. Ordinary pushes and repairs preserve that authorization while invalidating stale readiness. The `pr_land.py` helper is the only merge-state mutation surface: it rechecks policy, reviews, checks, head identity, queue requirement and the allowed merge method before using GitHub's protected path. `--dry-run` is optional inspection.
 
-The workflow never uses admin bypass, force-push, protection bypass, history rewrite, direct REST/GraphQL merge mutations, or implicit/bulk approval. A changed head invalidates approval. After an approved request, the read-only watcher remains active in `awaiting_merge` only while the exact-head auto-merge request or merge-queue entry remains observable; vanished or rejected enrollment becomes a blocker, and only an exact-head `merged` observation is success.
+No admin/protection bypass, force-push, published-history rewrite, direct merge API or blocking-review dismissal is permitted. Required eligible approvers remain required. Auto-merge enrollment never suppresses repairs; the watcher stays responsible until GitHub confirms merge. A plain commit request stays local rather than launching a completion workflow.
 
 ## Privacy and license
 

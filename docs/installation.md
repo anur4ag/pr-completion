@@ -1,5 +1,8 @@
 # Installation
 
+Source 0.4.0 is prepared but unpublished. Use the local development installation steps until publication. Run the 0.4.0 pinned commands below only after that release is published. The last published 0.3.0 release retains its previous confirmation contract.
+
+
 Install `pr-completion` from the public GitHub marketplace repository `anur4ag/pr-completion`; both the plugin id and marketplace name are `pr-completion`.
 
 ## Requirements
@@ -35,17 +38,17 @@ claude plugin install pr-completion@pr-completion --scope user
 
 Use `--scope user` for a personal install. Claude Code also supports `project` and `local` scopes.
 
-### Pin v0.3.0
+### Pin v0.4.0
 
 ```bash
-claude plugin marketplace add anur4ag/pr-completion@v0.3.0
+claude plugin marketplace add anur4ag/pr-completion@v0.4.0
 claude plugin install pr-completion@pr-completion --scope user
 ```
 
 Equivalent Git URL form:
 
 ```bash
-claude plugin marketplace add https://github.com/anur4ag/pr-completion.git#v0.3.0
+claude plugin marketplace add https://github.com/anur4ag/pr-completion.git#v0.4.0
 claude plugin install pr-completion@pr-completion --scope user
 ```
 
@@ -76,17 +79,17 @@ codex plugin marketplace add anur4ag/pr-completion
 codex plugin add pr-completion@pr-completion
 ```
 
-### Pin v0.3.0
+### Pin v0.4.0
 
 ```bash
-codex plugin marketplace add anur4ag/pr-completion@v0.3.0
+codex plugin marketplace add anur4ag/pr-completion@v0.4.0
 codex plugin add pr-completion@pr-completion
 ```
 
 Or pass the ref separately:
 
 ```bash
-codex plugin marketplace add anur4ag/pr-completion --ref v0.3.0
+codex plugin marketplace add anur4ag/pr-completion --ref v0.4.0
 codex plugin add pr-completion@pr-completion
 ```
 

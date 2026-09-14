@@ -52,7 +52,7 @@ WATCHER_FIXTURES = (
     ("review-comment.json", "actionable", 0),
     ("pending-ci.json", "pending", 0),
     ("blocked.json", "blocked", 20),
-    ("external-auto-merge.json", "auto_merge", 0),
+    ("external-auto-merge.json", "awaiting_merge", 0),
     ("conflict.json", "actionable", 0),
 )
 
@@ -288,6 +288,7 @@ def run_installed_watcher(
                 python_executable,
                 "-B",
                 str(lander),
+                "--dry-run",
                 "--fixture",
                 str(fixtures_dir / "ready-to-merge.json"),
                 "--head",
@@ -309,9 +310,7 @@ def run_installed_watcher(
                 f"{landing.stderr or landing.stdout}"
             )
         plan = json.loads(landing.stdout)
-        if plan.get("state") != "confirmation_required" or not plan.get(
-            "requiresConfirmation"
-        ):
+        if plan.get("state") != "landing_planned":
             raise SmokeError(f"installed guarded landing plan is unsafe: {plan}")
     return results
 

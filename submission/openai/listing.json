@@ -3,8 +3,8 @@
   "submissionType": "skills-only",
   "pluginName": "PR Completion",
   "category": "Productivity",
-  "shortDescription": "Prepare, watch, and explicitly land GitHub pull requests.",
-  "longDescription": "PR Completion packages four coordinated skills for validating and committing local work, creating pull requests, watching GitHub gates, repairing CI failures, triaging review feedback, and resolving conflicts. At verified readiness it asks separately for each PR and exact head before a guarded protected auto-merge or merge-queue request, then observes the request until merged or blocked. It never uses admin or protection bypass, force-push, history rewrite, implicit approval, or direct merge APIs.",
+  "shortDescription": "Autonomously shepherd GitHub pull requests through merge.",
+  "longDescription": "PR Completion validates and commits task changes, creates pull requests, repairs CI and conflicts, and triages CodeRabbit, Codex, and human feedback. Invoking completion authorizes protected landing through verified merge. It reuses one watcher, relies on automatic incremental reviews after pushes, and obtains effective approval after findings are handled. Fresh readiness and a head race guard preserve GitHub protections without repeated user approval prompts. It never uses admin bypass, force-push, history rewriting, or direct merge APIs.",
   "developerIdentity": {
     "displayName": "Traycer",
     "portalLabel": "Business \u2014 Traycer",
@@ -17,12 +17,12 @@
   "privacyPolicyURL": "https://anur4ag.github.io/pr-completion/privacy/",
   "termsOfServiceURL": "https://anur4ag.github.io/pr-completion/terms/",
   "repositoryURL": "https://github.com/anur4ag/pr-completion",
-  "releaseURL": "https://github.com/anur4ag/pr-completion/releases/tag/v0.3.0",
+  "releaseURL": "https://github.com/anur4ag/pr-completion/releases/tag/v0.4.0",
   "source": {
-    "version": "0.3.0",
-    "tag": "v0.3.0",
-    "commit": "b2fdf34c93bd26824ec1d7bed78b4966337d344a",
-    "portalPluginSHA256": "adcf327035a42c692391355510bc76c990e9140f8a51c57dcbca256119818d59"
+    "version": "0.4.0",
+    "tag": "v0.4.0",
+    "commit": null,
+    "portalPluginSHA256": null
   },
   "containsMCP": false,
   "authentication": "Uses the user's existing local GitHub CLI authentication; the plugin operates no credential service and stores no credentials.",

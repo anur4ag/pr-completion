@@ -1,4 +1,4 @@
 interface:
   display_name: "Take PR to Completion"
   short_description: "Prepare, watch, and explicitly land pull requests"
-  default_prompt: "Use $pr-completion:take-pr-to-completion to prepare and watch each pull request, ask me for per-PR landing confirmation at verified readiness, then observe an approved landing until merged or blocked."
+  default_prompt: "Use $pr-completion:take-pr-to-completion to take the in-scope PRs through checks, incremental reviews, repairs, and protected merge without repeated approval prompts."

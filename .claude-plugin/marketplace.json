@@ -10,7 +10,7 @@
     {
       "name": "pr-completion",
       "description": "Validate and commit workspace changes, create and watch pull requests, then request per-PR confirmation before a guarded landing.",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "source": "./",
       "category": "productivity"
     }
