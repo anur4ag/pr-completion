@@ -730,6 +730,45 @@ class ConfigurationTests(unittest.TestCase):
 
 
 class BackgroundRunnerTests(unittest.TestCase):
+    def test_behind_base_waits_across_restarts_and_heads_then_requires_update(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fixture = root / "behind.json"
+            raw = json.loads((FIXTURES / "pending-ci.json").read_text())
+            target = raw["targets"][0]
+            target["pr"]["mergeStateStatus"] = "BEHIND"
+            command = [
+                sys.executable, "-B", str(SCRIPT_PATH), "--no-config",
+                "--mode", "until-actionable", "--fixture", str(fixture),
+                "--cursor", str(root / "cursor.json"),
+                "--interval", "0.01", "--max-interval", "0.01", "--jitter", "0",
+                "--timeout", "0.1",
+            ]
+            for head in ("head-pending", "head-pending", "next-head"):
+                with self.subTest(head=head):
+                    target["pr"]["headRefOid"] = head
+                    fixture.write_text(json.dumps(raw))
+                    result = subprocess.run(command, text=True, capture_output=True, timeout=5)
+                    self.assertEqual(result.returncode, pr_watch.EXIT_TIMEOUT, result.stderr)
+                    value = json.loads(result.stdout)
+                    self.assertEqual(value["targets"][0]["state"], "pending")
+                    self.assertEqual(value["actions"], [])
+                    self.assertIn("base_behind", [p["type"] for p in value["targets"][0]["pending"]])
+
+            target["checks"][0].update(bucket="pass", state="SUCCESS")
+            fixture.write_text(json.dumps(raw))
+            result = subprocess.run(command, text=True, capture_output=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            value = json.loads(result.stdout)
+            self.assertEqual(value["state"], "actionable")
+            self.assertEqual([a["type"] for a in value["actions"]], ["base_behind"])
+
+            target["pr"]["mergeStateStatus"] = "CLEAN"
+            fixture.write_text(json.dumps(raw))
+            result = subprocess.run(command, text=True, capture_output=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout)["state"], "ready")
+
     def test_actionable_observation_is_process_success_with_consumable_json(self):
         result = subprocess.run(
             [

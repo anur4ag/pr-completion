@@ -1138,7 +1138,11 @@ def classify_target(
     if mergeable == "CONFLICTING" or merge_state == "DIRTY":
         actions.append({"type": "conflict"})
     if merge_state == "BEHIND":
-        actions.append({"type": "base_behind"})
+        if pending_checks or review_running:
+            pending.append({"type": "base_behind",
+                            "reason": "wait for current checks and automatic review before updating the base"})
+        else:
+            actions.append({"type": "base_behind"})
     if failed_checks:
         actions.append(
             {

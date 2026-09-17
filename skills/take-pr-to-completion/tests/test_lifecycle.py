@@ -109,6 +109,47 @@ class RepositoryReviewPolicyTests(unittest.TestCase):
 
 
 class ReviewLifecycleTests(unittest.TestCase):
+    def test_behind_base_waits_for_automatic_review_then_requires_update(self):
+        for signal in ("check", "reaction", "registration"):
+            with self.subTest(signal=signal):
+                value = raw()
+                value["pr"]["mergeStateStatus"] = "BEHIND"
+                if signal == "check":
+                    value["pr"]["statusCheckRollup"] = [{"name": "CodeRabbit", "status": "IN_PROGRESS"}]
+                elif signal == "reaction":
+                    value["pr"]["reactions"] = [{"content": "EYES", "createdAt": "2026-09-15T00:01:00Z",
+                                                "user": {"login": BOT_REVIEWERS[1]}}]
+                else:
+                    value["pr"]["headRefOid"] = "next-head"
+                result = classify(value)
+                self.assertEqual(result["state"], "pending")
+                self.assertEqual(result["actions"], [])
+                self.assertIn("base_behind", [p["type"] for p in result["targets"][0]["pending"]])
+                value["pr"]["statusCheckRollup"] = [{"context": "CodeRabbit", "state": "SUCCESS"}]
+                value["pr"]["reactions"] = []
+                result = classify(value)
+                self.assertEqual(result["state"], "actionable")
+                self.assertEqual([a["type"] for a in result["actions"]], ["base_behind"])
+
+    def test_waiting_for_base_update_never_hides_repairs(self):
+        for action in ("ci_failure", "conflict", "review_threads", "review_feedback", "changes_requested"):
+            with self.subTest(action=action):
+                value = raw()
+                value["pr"]["mergeStateStatus"] = "BEHIND"
+                value["checks"][0].update(bucket="pending", state="IN_PROGRESS")
+                if action == "ci_failure":
+                    value["checks"][1].update(bucket="fail", state="FAILURE")
+                elif action == "conflict":
+                    value["pr"]["mergeable"] = "CONFLICTING"
+                elif action == "review_feedback":
+                    value["pr"]["reviews"][0]["body"] = "Material finding"
+                else:
+                    value["reviewThreads"] = [{"id": "thread", "isResolved": False}]
+                    value["pr"]["reviewDecision"] = "CHANGES_REQUESTED"
+                result = classify(value)
+                self.assertEqual(result["state"], "actionable")
+                self.assertIn(action, [a["type"] for a in result["actions"]])
+
     def test_native_required_policy_distinguishes_empty_from_missing_checks(self):
         configured = replace(settings(), check_policy="required")
         value = raw()
@@ -221,6 +262,27 @@ class ReviewLifecycleTests(unittest.TestCase):
 
 
 class ObservationTests(unittest.TestCase):
+    def test_behind_wait_wakes_on_finished_checks_in_both_monitor_modes(self):
+        for mode in ("until-actionable", "watch"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                value = raw()
+                value["pr"]["mergeStateStatus"] = "BEHIND"
+                value["checks"][0].update(bucket="pending", state="IN_PROGRESS")
+                waiting = classify(value)
+                value["checks"][0].update(bucket="pass", state="SUCCESS")
+                finished = classify(value)
+                value["pr"].update(state="MERGED", mergedAt="2026-09-16T00:00:00Z")
+                observations = [waiting, finished, classify(value)]
+                configured = replace(settings(), mode=mode, observations_path=Path(directory) / "events.ndjson")
+                with mock.patch.object(w, "collect_snapshot", side_effect=observations), mock.patch.object(
+                    w.time, "sleep"
+                ), redirect_stdout(io.StringIO()):
+                    self.assertEqual(w.watch(configured, w.Runner(), Path(directory)), 0)
+                events = [json.loads(line) for line in configured.observations_path.read_text().splitlines()]
+                self.assertEqual([e["state"] for e in events],
+                                 ["pending", "actionable"] + (["merged"] if mode == "watch" else []))
+                self.assertEqual([a["type"] for a in events[1]["actions"]], ["base_behind"])
+
     def test_one_monitor_survives_ready_repair_enrollment_until_merged(self):
         values = []
         for stage in ("ready", "failure", "enrolled", "merged"):
@@ -284,6 +346,22 @@ class ObservationTests(unittest.TestCase):
             with mock.patch.object(w, "collect_snapshot", return_value=classify(pending, configured)), redirect_stdout(output):
                 w.watch(configured, w.Runner(), Path.cwd())
             self.assertEqual(json.loads(output.getvalue())["actions"][-1]["type"], "diagnose_wait")
+
+    def test_behind_wait_uses_existing_stall_diagnosis_after_restart(self):
+        value = raw()
+        value["pr"]["mergeStateStatus"] = "BEHIND"
+        value["checks"][0].update(bucket="pending", state="IN_PROGRESS")
+        with tempfile.TemporaryDirectory() as directory:
+            configured = replace(settings(), mode="until-actionable", cursor_path=Path(directory) / "cursor.json")
+            previous = classify(value, configured)
+            previous["waitingSince"] = "2020-01-01T00:00:00Z"
+            w.write_cursor(previous, configured.cursor_path)
+            output = io.StringIO()
+            with mock.patch.object(w, "collect_snapshot", return_value=classify(value, configured)), redirect_stdout(output):
+                w.watch(configured, w.Runner(), Path(directory))
+            result = json.loads(output.getvalue())
+            self.assertEqual([a["type"] for a in result["actions"]], ["diagnose_wait"])
+            self.assertIn("base_behind", [p["type"] for p in result["targets"][0]["pending"]])
 
     def test_hung_cli_is_bounded_and_nontransient_denial_is_not_retried(self):
         with mock.patch.object(w.subprocess, "run", side_effect=subprocess.TimeoutExpired("gh", 60)) as run:
