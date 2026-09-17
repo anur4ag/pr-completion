@@ -131,6 +131,24 @@ class LandingTests(unittest.TestCase):
         self.assertEqual(planned.returncode, 0, planned.stderr + planned.stdout)
         self.assertEqual(json.loads(planned.stdout)["state"], "landing_planned")
 
+    def test_behind_base_cannot_land_while_waiting_or_after_checks_finish(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Path(directory) / "behind.json"
+            raw = json.loads((FIXTURES / "ready-to-merge.json").read_text())
+            raw["targets"][0]["pr"]["mergeStateStatus"] = "BEHIND"
+            for bucket, state in (("pending", "IN_PROGRESS"), ("pass", "SUCCESS")):
+                with self.subTest(state=state):
+                    raw["targets"][0]["checks"][0].update(bucket=bucket, state=state)
+                    fixture.write_text(json.dumps(raw))
+                    result = subprocess.run(
+                        [sys.executable, "-B", str(SCRIPT_PATH), "--repo", directory,
+                         "--fixture", str(fixture), "--head", "head-ready",
+                         "--mode", "auto", "--method", "squash", "--dry-run"],
+                        capture_output=True, text=True, timeout=10,
+                    )
+                    self.assertEqual(result.returncode, 20, result.stdout + result.stderr)
+                    self.assertIn("not verified ready", json.loads(result.stdout)["errors"][0])
+
     def test_command_timeout_requires_reconciliation(self):
         with mock.patch.object(subprocess, "run", side_effect=subprocess.TimeoutExpired("command", 60)):
             with self.assertRaisesRegex(pr_land.LandingError, "reconcile"):

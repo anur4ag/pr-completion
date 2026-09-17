@@ -7,6 +7,7 @@ Invoking completion authorizes the workflow through verified merge, including no
 - Review threads, review summaries, and PR comments are triaged together. Durable feedback receipts survive restarts and expose edited findings.
 - After findings are handled, request `@coderabbitai approve` if effective approval is missing. GitHub's eligible-approver and branch protections still apply.
 - The landing helper rechecks readiness and uses GitHub CLI's head race guard. A stale observation returns to watching under the same task authorization.
+- A behind base waits while checks or automatic reviews are pending, then becomes actionable; failures, conflicts, review findings, and stalled waits still surface.
 - Independent PRs progress independently; enrollment never hides failing checks or new feedback. Only an observed GitHub merge is completion.
 - A standalone commit request returns after local validated commits.
 

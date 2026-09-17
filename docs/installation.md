@@ -138,8 +138,8 @@ Codex development may use `scripts/stage-codex-dev-install.py` to create a tempo
 2. Confirm `gh auth status` succeeds for the PR host.
 3. Ask the agent to run `$pr-completion:take-pr-to-completion`.
 4. Let it commit, push, create/find the PR, and handle normal watcher cycles.
-5. At `ready`, approve or decline the prompt for that PR and exact head SHA. The prompt warns that approval may merge immediately.
-6. After approval, read the terminal state: `merged` or `blocked`. If you decline, the result remains `ready`.
+5. The agent lands each ready PR under your original authorization and continues until GitHub confirms `merged` or an evidenced blocker prevents progress.
+6. Request local-only or stop-at-ready explicitly when you want a narrower workflow.
 
 ## Troubleshooting
 
@@ -154,6 +154,14 @@ Codex development may use `scripts/stage-codex-dev-install.py` to create a tempo
 - Confirm the selector is `pr-completion@pr-completion` (`plugin@marketplace`).
 - Inspect installed and available plugin inventories after a clean reinstall.
 - Remove a differently named marketplace if it shadows `pr-completion`.
+
+### Delegated agents still ask for routine confirmation
+
+Check the skill path and `pr_watch.py --print-config` inside the delegated agent's environment.
+Version 0.3.0 requires per-head landing confirmation; 0.4.0 authorizes the full lifecycle on invocation.
+Hosts with separate Codex or Claude account directories need their own plugin updates.
+Update the marketplace and reinstall in that same environment, then verify the loaded skill in a new session.
+A desktop installation alone does not update a separate agent account.
 
 ### GitHub authentication fails
 
