@@ -50,25 +50,19 @@ from pathlib import Path
 from typing import Any
 
 
-RELEASE_VERSION = "0.3.0"
-RELEASE_REF = "v0.3.0"
+RELEASE_VERSION = "0.4.0"
+RELEASE_REF = "v0.4.0"
 # Filled after tag + release publish. Empty string means "resolve from tag /
 # working tree and skip published-checksum pin until set".
-RELEASE_COMMIT = "b2fdf34c93bd26824ec1d7bed78b4966337d344a"
+RELEASE_COMMIT = "3c73522adc9d48667055278d350c0e76e9b45058"
 # Published GitHub Release installable plugin ZIP bytes.
-RELEASE_INSTALLABLE_SHA256 = (
-    "423fb7cab966cf7c986dfa47e559970710b91f3c23145e7a922ff191823d699b"
-)
+RELEASE_INSTALLABLE_SHA256 = "a561ccaf810273a5795fa393fd3cc7520ee0698c0357ecec267140a3d1171947"
 # Published minimal portal-upload ZIP bytes.
-RELEASE_PORTAL_SHA256 = (
-    "adcf327035a42c692391355510bc76c990e9140f8a51c57dcbca256119818d59"
-)
+RELEASE_PORTAL_SHA256 = "7e2083b90dcb88bea570b9dcf0c0b1427f6b33f15c9bc46e89ee66f9e031e374"
 # Platform-independent fingerprint of sorted (path, mode, content) members of
 # that same package. ZIP container bytes can differ across zlib/platform even
 # when member payloads are identical; content pin covers that case.
-RELEASE_PLUGIN_CONTENT_SHA256 = (
-    "2d8cfe55c2a5888702ded4cb0b8c498fbc2a0eb729f57e3e187006e4448c457c"
-)
+RELEASE_PLUGIN_CONTENT_SHA256 = "30c312b1420852ecf10e4b20722f7ae5d6212129490acb8733578cd9e978163b"
 
 ZIP_DATE_TIME = (1980, 1, 1, 0, 0, 0)
 MAX_PORTAL_ZIP_BYTES = 1024 * 1024

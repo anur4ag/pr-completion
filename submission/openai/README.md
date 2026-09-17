@@ -13,13 +13,14 @@ This directory holds form inputs and validation fixtures for the PR Completion O
 
 ## Build and validate
 
-Version 0.4.0 is prepared locally and has not been published or submitted. From the working tree:
+Version 0.4.0 is published on GitHub; OpenAI directory submission remains pending.
+From the working tree:
 
 ```bash
 # Pre-tag / local portal ZIP from the current tree (default mode)
 python3 -B scripts/package-openai-submission.py
 
-# Reconstruct the last published release (currently v0.3.0) with its own materials
+# Reconstruct the last published release (v0.4.0) with its own materials
 python3 -B scripts/package-openai-submission.py --from-pinned-release --check-urls
 ```
 

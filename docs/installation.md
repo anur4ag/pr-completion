@@ -1,6 +1,7 @@
 # Installation
 
-Source 0.4.0 is prepared but unpublished. Use the local development installation steps until publication. Run the 0.4.0 pinned commands below only after that release is published. The last published 0.3.0 release retains its previous confirmation contract.
+Version 0.4.0 is published with autonomous protected landing.
+Upgrade older installations in each harness account; 0.3.0 retains the previous confirmation contract.
 
 
 Install `pr-completion` from the public GitHub marketplace repository `anur4ag/pr-completion`; both the plugin id and marketplace name are `pr-completion`.
@@ -179,4 +180,4 @@ A desktop installation alone does not update a separate agent account.
 
 - [Skills and safety](skills.md)
 - [Support](support.md)
-- [Release v0.3.0](https://github.com/anur4ag/pr-completion/releases/tag/v0.3.0)
+- [Release v0.4.0](https://github.com/anur4ag/pr-completion/releases/tag/v0.4.0)
