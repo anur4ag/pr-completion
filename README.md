@@ -4,9 +4,11 @@ Autonomous pull request completion for [Claude Code](https://code.claude.com/) a
 
 Invoke PR Completion to delegate the in-scope PR through **verified merge**. It prepares changes, uses one managed watcher, repairs CI/review findings, observes automatic incremental reviews, obtains effective approval, and uses GitHub's protected landing path. Routine head changes do not require another user approval or manual review request.
 
-> **Status.** Source `VERSION` `0.4.0` is prepared for release. The last published release is [v0.3.0](https://github.com/anur4ag/pr-completion/releases/tag/v0.3.0), which retains the previous confirmation-based contract. The new behavior is available from this working tree and must be published before marketplace users receive it.
+> **Release.** `VERSION` `0.4.0` is published as [v0.4.0](https://github.com/anur4ag/pr-completion/releases/tag/v0.4.0).
+> Upgrade every harness installation to receive autonomous completion and the watcher fix.
 > Docs: [https://anur4ag.github.io/pr-completion/](https://anur4ag.github.io/pr-completion/).
-> Publisher: **Business — Traycer**. No directory submission or release publication is claimed by this change.
+> Publisher: **Business - Traycer**.
+> OpenAI directory submission remains a separate step.
 
 ## Skills
 
@@ -50,7 +52,7 @@ claude plugin marketplace add anur4ag/pr-completion
 claude plugin install pr-completion@pr-completion --scope user
 ```
 
-After v0.4.0 is published, pin the marketplace to that release tag, then install:
+To pin the marketplace to v0.4.0, then install:
 
 ```bash
 claude plugin marketplace add anur4ag/pr-completion@v0.4.0
@@ -79,7 +81,7 @@ codex plugin marketplace add anur4ag/pr-completion
 codex plugin add pr-completion@pr-completion
 ```
 
-After v0.4.0 is published, pin the marketplace to that release tag:
+To pin the marketplace to v0.4.0:
 
 ```bash
 codex plugin marketplace add anur4ag/pr-completion@v0.4.0

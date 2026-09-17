@@ -21,8 +21,8 @@
   "source": {
     "version": "0.4.0",
     "tag": "v0.4.0",
-    "commit": null,
-    "portalPluginSHA256": null
+    "commit": "3c73522adc9d48667055278d350c0e76e9b45058",
+    "portalPluginSHA256": "7e2083b90dcb88bea570b9dcf0c0b1427f6b33f15c9bc46e89ee66f9e031e374"
   },
   "containsMCP": false,
   "authentication": "Uses the user's existing local GitHub CLI authentication; the plugin operates no credential service and stores no credentials.",

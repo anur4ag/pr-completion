@@ -6,7 +6,9 @@ It prepares changes, reuses one managed watcher, repairs CI and review findings,
 
 <div class="callout">
 
-**Release status.** Version 0.4.0 is prepared locally; marketplace users receive these changes after publication. Invocation authorizes completion, while explicit local-only/stop-at-ready requests remain narrower. No admin/protection bypass, force-push, or blocking-review dismissal is permitted.
+**Release status.** Version 0.4.0 is published.
+Invocation authorizes completion, while explicit local-only/stop-at-ready requests remain narrower.
+No admin/protection bypass, force-push, or blocking-review dismissal is permitted.
 
 </div>
 
@@ -68,7 +70,7 @@ Target repositories must also have their own build, lint, test, and hook depende
 ## Project reference
 
 - [Repository](https://github.com/anur4ag/pr-completion)
-- [Release v0.4.0 (pending)](https://github.com/anur4ag/pr-completion/releases/tag/v0.4.0)
+- [Release v0.4.0](https://github.com/anur4ag/pr-completion/releases/tag/v0.4.0)
 - [Skills and safety](skills.md)
 - [Support](support.md)
 - [Privacy](privacy.md)

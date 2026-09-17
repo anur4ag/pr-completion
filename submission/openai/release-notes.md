@@ -1,4 +1,4 @@
-# PR Completion 0.4.0 — prepared, unpublished
+# PR Completion 0.4.0 - published
 
 Invoking completion authorizes the workflow through verified merge, including normal repair rounds and head changes. Narrower requests remain narrower.
 
@@ -13,4 +13,6 @@ Invoking completion authorizes the workflow through verified merge, including no
 
 Breaking CLI changes: `--confirm` and `--policy-digest` are removed; `--dry-run` is optional. Required reviewers now mean completed participation, not an approval on every head.
 
-Build `pr-completion-0.4.0-portal-plugin.zip` from the working tree for validation. Publish and pin the final release before distribution. The immutable 0.3.0 pins remain historical verification inputs until then.
+Published as `v0.4.0` at commit `3c73522adc9d48667055278d350c0e76e9b45058`.
+Use the published `pr-completion-0.4.0-portal-plugin.zip` for directory submission.
+Release checksums and the portable content fingerprint are pinned in the packaging script.
