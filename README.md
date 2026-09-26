@@ -105,6 +105,29 @@ codex plugin remove pr-completion@pr-completion
 codex plugin marketplace remove pr-completion
 ```
 
+### skills.sh
+
+Install the skills directly with the [skills.sh](https://skills.sh) CLI, for Claude Code, Codex, or any other supported agent:
+
+```bash
+npx skills add anur4ag/pr-completion --skill '*' -g
+```
+
+Add `-a claude-code` or `-a codex` to target a specific agent. List available skills without installing:
+
+```bash
+npx skills add anur4ag/pr-completion --list
+```
+
+Update or uninstall:
+
+```bash
+npx skills update -g
+npx skills remove -g take-pr-to-completion commit-workspace-changes gh-review-comment-triage merge-conflict-resolution
+```
+
+Install all four skills together, since they call each other. Installed this way they have no `pr-completion:` namespace, so invoke them by bare name, for example `$take-pr-to-completion`.
+
 ## First use
 
 1. Open a repository with an open pull request or local task changes ready to commit.
