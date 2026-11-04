@@ -13,6 +13,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
+from types import ModuleType
 from pathlib import Path
 
 
@@ -125,6 +127,39 @@ class PullRequestStateTests(unittest.TestCase):
         self.assertEqual(value["state"], "pending")
         self.assertEqual(pr_watch.exit_code(value["state"]), pr_watch.EXIT_OBSERVED)
         self.assertEqual(value["targets"][0]["checks"]["pending"], ["compile"])
+
+    def test_spi_pr97_required_none_does_not_inherit_optional_billing_failure(self):
+        # Real 2026-11-05 failure: SPI PR #97, Actions run 41873633121 never
+        # started (billing); gh pr checks --required reported no required checks.
+        # Version 0.3.0 nevertheless blocked twice on empty checks + UNSTABLE.
+        raw = json.loads((FIXTURES / "ready-to-merge.json").read_text())
+        target = raw["targets"][0]
+        target["repository"] = "chenchihcu/spi-spc-analyst-web"
+        target["pr"].update(number=97, headRefOid="c19eae416aa842d35a9b66d31881ca9dfba70ded",
+                            reviewDecision="", reviews=[], mergeStateStatus="UNSTABLE")
+        target["checks"] = []  # successful native --required selection
+        required = replace(settings(), check_policy="required")
+        self.assertEqual(pr_watch.snapshot(raw["targets"], required)["state"], "ready")
+        past = subprocess.run(["git", "show", "v0.3.0:skills/take-pr-to-completion/scripts/pr_watch.py"],
+                              cwd=PLUGIN_ROOT, text=True, capture_output=True, check=True)
+        legacy = ModuleType("legacy_spi_pr97_watch")
+        sys.modules[legacy.__name__] = legacy
+        try:
+            exec(compile(past.stdout, "v0.3.0/pr_watch.py", "exec"), legacy.__dict__)
+            self.assertEqual(legacy.snapshot(raw["targets"], required)["state"], "pending",
+                             "The real past mistake must reproduce on immutable v0.3.0")
+        finally:
+            del sys.modules[legacy.__name__]
+        self.assertNotEqual(pr_watch.snapshot(raw["targets"], settings())["state"], "ready")
+        target["checks"] = [{"name": "required-test", "state": "FAILURE", "bucket": "fail"}]
+        self.assertNotEqual(pr_watch.snapshot(raw["targets"], required)["state"], "ready")
+        target["checks"] = []
+        for field, value in [("mergeable", "CONFLICTING"), ("reviewDecision", "REVIEW_REQUIRED"), ("headRefOid", "")]:
+            with self.subTest(field=field):
+                previous = target["pr"][field]
+                target["pr"][field] = value
+                self.assertNotEqual(pr_watch.snapshot(raw["targets"], required)["state"], "ready")
+                target["pr"][field] = previous
 
     def test_review_comment_fixture(self):
         value = self.fixture_snapshot("review-comment.json")
